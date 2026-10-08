@@ -29,8 +29,13 @@ pub fn window_snap_overlay() {
 #[specta::specta]
 pub fn save_text_file(path: String, contents: String) -> AppResult<()> {
     let path = std::path::PathBuf::from(path);
-    if !path.is_absolute() || path.is_dir() {
-        return Err(AppError::invalid("path", "choose a file location"));
+    // Only plain-text files at an absolute, user-chosen location: this command is not a general
+    // file-write primitive for the WebView.
+    let is_txt = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("txt"));
+    if !path.is_absolute() || path.is_dir() || !is_txt {
+        return Err(AppError::invalid("path", "choose a .txt file location"));
     }
     std::fs::write(&path, contents)?;
     Ok(())

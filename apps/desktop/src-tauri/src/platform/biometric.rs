@@ -89,13 +89,13 @@ mod imp {
 
     pub fn available() -> bool {
         KeyCredentialManager::IsSupportedAsync()
-            .and_then(|op| op.get())
+            .and_then(|op| op.join())
             .unwrap_or(false)
     }
 
     pub fn delete_credential() {
         if let Ok(op) = KeyCredentialManager::DeleteAsync(&HSTRING::from(CREDENTIAL)) {
-            let _ = op.get();
+            let _ = op.join();
         }
     }
 
@@ -126,7 +126,7 @@ mod imp {
             } else {
                 KeyCredentialManager::OpenAsync(&name)
             }
-            .and_then(|op| op.get())
+            .and_then(|op| op.join())
             .map_err(win)?;
             let status = result.Status().map_err(win)?;
             if status != KeyCredentialStatus::Success {
@@ -136,7 +136,7 @@ mod imp {
             let challenge = CryptographicBuffer::CreateFromByteArray(CHALLENGE).map_err(win)?;
             let signed = credential
                 .RequestSignAsync(&challenge)
-                .and_then(|op| op.get())
+                .and_then(|op| op.join())
                 .map_err(win)?;
             let status = signed.Status().map_err(win)?;
             if status != KeyCredentialStatus::Success {

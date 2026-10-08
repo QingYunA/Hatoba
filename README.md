@@ -7,7 +7,7 @@
 - **本地优先**：没有网络、没有开启同步时功能完整可用。
 - **Windows 优先**：自绘标题栏、Snap Layouts、Mica、Segoe / Cascadia 字体、Windows 输入法；macOS 与 Linux 随后跟进。
 
-> 状态：开发中（0.1）。需求与架构见 [`docs/hatoba-spec.md`](docs/hatoba-spec.md)，视觉设计稿见 [`docs/design/`](docs/design/)。
+> 状态：开发中（0.1）。需求与架构见 [`docs/hatoba-spec.md`](docs/hatoba-spec.md)，逐条实现情况见 [`docs/status.md`](docs/status.md)，视觉设计稿见 [`docs/design/`](docs/design/)。
 
 ## 功能
 
@@ -51,7 +51,9 @@ pnpm typecheck && pnpm test
 
 SSH 集成测试使用真实的 OpenSSH 服务器：`HATOBA_SSH_IT=1 cargo test -p hatoba-ssh`（需要已安装 `sshd`）。
 
-TypeScript 绑定由 tauri-specta 从 Rust 生成：`cargo test -p hatoba-desktop export_bindings`。
+TypeScript 绑定由 tauri-specta 从 Rust 生成：`cargo test -p hatoba-desktop export_bindings`；`src/ipc/contract.check.ts` 会在类型检查时比对生成的绑定与前端使用的契约。
+
+端到端冒烟测试（Linux，真实后端 + 临时 sshd）：见 [`apps/desktop/e2e`](apps/desktop/e2e/README.md)。
 
 ## 部署同步 Worker
 
