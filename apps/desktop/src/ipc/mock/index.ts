@@ -36,6 +36,9 @@ export function createMockApi(): HatobaApi {
   let devices = [...D.DEVICES];
   let forwards: ForwardView[] = demo === "empty" ? [] : D.FORWARDS.map((f) => ({ ...f }));
   const activeForwards = new Map<string, number>();
+  const dropSessionForwards = (sid: string) => {
+    for (const key of [...activeForwards.keys()]) if (key.startsWith(`${sid}/`)) activeForwards.delete(key);
+  };
   let vaultState: VaultStatus["state"] =
     demo === "onboarding" ? "uninitialized" : demo === "locked" ? "locked" : "unlocked";
   let biometric = q.get("hello") !== "off";
@@ -365,7 +368,15 @@ export function createMockApi(): HatobaApi {
         onFrame(frame(FRAME_CLOSED, new TextEncoder().encode("exit")));
         state("disconnected", { exit_status: 0 });
         shells.delete(sid);
+        dropSessionForwards(sid);
       };
+      // FWD-02: like the real backend, auto-start forwards come up with the connection and are announced
+      // by events that can fire before the UI has the session id.
+      for (const f of forwards.filter((x) => x.host_id === hostId && x.auto_start)) {
+        const port = f.bind_port || 49152 + Math.floor(Math.random() * 1000);
+        activeForwards.set(`${sid}/${f.id}`, port);
+        emit("ssh://forward", { session_id: sid, forward_id: f.id, state: "running", local_port: port, error: null });
+      }
       return sid;
     },
     ssh_write: async (sid, data) => {
@@ -375,6 +386,7 @@ export function createMockApi(): HatobaApi {
     ssh_disconnect: async (sid) => {
       shells.get(sid)?.stop();
       shells.delete(sid);
+      dropSessionForwards(sid);
     },
     ssh_test: async (input) => {
       await delay(800);

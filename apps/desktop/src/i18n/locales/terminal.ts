@@ -14,6 +14,18 @@ export default defineMessages({
     "terminal.sftpToggle": "显示或隐藏 SFTP 文件面板",
     "terminal.more": "更多操作",
 
+    // port forwarding menu (FWD-01, FWD-02)
+    "terminal.fwd": "端口转发",
+    "terminal.fwd.running": "{n} 个转发运行中",
+    "terminal.fwd.none": "这台主机还没有端口转发。",
+    "terminal.fwd.loadFailed": "无法读取端口转发。",
+    "terminal.fwd.start": "启动",
+    "terminal.fwd.stop": "停止",
+    "terminal.fwd.autoPort": "自动",
+    "terminal.fwd.copy": "复制 {addr}",
+    "terminal.fwd.copied": "已复制 {addr}",
+    "terminal.fwd.manage": "管理端口转发…",
+
     // overflow / context menu
     "terminal.menu.reconnect": "重新连接",
     "terminal.menu.disconnect": "断开连接",
@@ -135,6 +147,19 @@ export default defineMessages({
     "terminal.sftpToggle": "Show or hide the SFTP file panel",
     "terminal.more": "More actions",
 
+    // port forwarding menu (FWD-01, FWD-02)
+    "terminal.fwd": "Port Forwarding",
+    "terminal.fwd.running": "{n} forwards running",
+    "terminal.fwd.running_one": "{n} forward running",
+    "terminal.fwd.none": "This host has no port forwards yet.",
+    "terminal.fwd.loadFailed": "Can’t read the port forwards.",
+    "terminal.fwd.start": "Start",
+    "terminal.fwd.stop": "Stop",
+    "terminal.fwd.autoPort": "auto",
+    "terminal.fwd.copy": "Copy {addr}",
+    "terminal.fwd.copied": "Copied {addr}",
+    "terminal.fwd.manage": "Manage Port Forwarding…",
+
     "terminal.menu.reconnect": "Reconnect",
     "terminal.menu.disconnect": "Disconnect",
     "terminal.menu.copy": "Copy",
@@ -249,6 +274,18 @@ export default defineMessages({
     "terminal.sftp": "SFTP",
     "terminal.sftpToggle": "SFTP ファイルパネルを表示/非表示",
     "terminal.more": "その他の操作",
+
+    // port forwarding menu (FWD-01, FWD-02)
+    "terminal.fwd": "ポートフォワーディング",
+    "terminal.fwd.running": "{n} 件の転送が実行中",
+    "terminal.fwd.none": "このホストにはポートフォワーディングがまだありません。",
+    "terminal.fwd.loadFailed": "ポートフォワーディングを読み込めません。",
+    "terminal.fwd.start": "開始",
+    "terminal.fwd.stop": "停止",
+    "terminal.fwd.autoPort": "自動",
+    "terminal.fwd.copy": "{addr} をコピー",
+    "terminal.fwd.copied": "{addr} をコピーしました",
+    "terminal.fwd.manage": "ポートフォワーディングを管理…",
 
     "terminal.menu.reconnect": "再接続",
     "terminal.menu.disconnect": "切断",

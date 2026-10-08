@@ -9,6 +9,7 @@ import { useT } from "@/i18n";
 import { api, toAppError } from "@/ipc/api";
 import type { AuthKind, HostInput, HostView, KeyView } from "@/ipc/types";
 import { cx } from "@/lib/cx";
+import { ForwardsSection } from "./ForwardsSection";
 import { useHostsUi } from "./ui";
 import s from "./HostEditPage.module.css";
 
@@ -459,6 +460,8 @@ export function HostEditPage({ hostId, groupId, back }: { hostId: string | null;
               </FormRow>
             </Group>
           </Section>
+
+          <ForwardsSection hostId={hostId} />
 
           <Section title={t("hosts.edit.sec.note")}>
             <TextArea

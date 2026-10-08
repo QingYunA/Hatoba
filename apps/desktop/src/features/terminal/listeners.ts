@@ -1,5 +1,6 @@
 import { useTransfers } from "@/features/sftp/transfers";
 import { api } from "@/ipc/api";
+import { applyForwardEvent } from "./forwards";
 import { pushAuthPrompt, pushHostKeyPrompt } from "./prompts";
 import { routeStateEvent } from "./session";
 import { watchTerminalAppearance } from "./theme";
@@ -14,6 +15,7 @@ export function startSessionListeners() {
   if (started) return;
   started = true;
   void api.listen("ssh://state", routeStateEvent);
+  void api.listen("ssh://forward", applyForwardEvent);
   void api.listen("ssh://hostkey-prompt", pushHostKeyPrompt);
   void api.listen("ssh://auth-prompt", pushAuthPrompt);
   void api.listen("transfer://progress", (ev) => useTransfers.getState().handle(ev));

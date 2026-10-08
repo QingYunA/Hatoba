@@ -15,6 +15,7 @@ import { api, toAppError } from "@/ipc/api";
 import { FRAME_CLOSED, FRAME_DATA, FRAME_ERROR, type AppError, type SessionStateEvent } from "@/ipc/types";
 import { isMac } from "@/lib/platform";
 import { openExternal, readClipboard, writeClipboard } from "./clipboard";
+import { dropSessionForwards, syncActiveForwards } from "./forwards";
 import { clearInfo, getInfo, patchInfo } from "./info";
 import { confirmMultilinePaste } from "./paste";
 import { askSecret } from "./prompts";
@@ -282,6 +283,7 @@ export class LiveSession {
     this.sent = sentSize;
     bySession.set(sid, this);
     this.setStatus("connected");
+    void syncActiveForwards(sid); // auto-start forwards (FWD-02) may be running already
     this.sendResize(); // the view may have been resized while connecting
     const early = earlyEvents.get(sid);
     earlyEvents.delete(sid);
@@ -306,7 +308,10 @@ export class LiveSession {
     if (this.status !== "connected") return;
     const sid = this.sessionId;
     this.sessionId = null;
-    if (sid) useTransfers.getState().purge(sid);
+    if (sid) {
+      useTransfers.getState().purge(sid);
+      dropSessionForwards(sid);
+    }
     patchInfo(this.tabId, { reason });
     this.term.write("\x1b[?25l");
     this.setStatus("disconnected");
@@ -365,6 +370,7 @@ export class LiveSession {
     if (old) {
       this.sessionId = null;
       useTransfers.getState().purge(old);
+      dropSessionForwards(old);
       void api.ssh_disconnect(old).catch(() => {});
     }
     this.releaseSession();
@@ -390,7 +396,10 @@ export class LiveSession {
     const sid = this.sessionId;
     this.sessionId = null;
     const closing = sid ? api.ssh_disconnect(sid).catch(() => {}) : null;
-    if (sid) useTransfers.getState().purge(sid);
+    if (sid) {
+      useTransfers.getState().purge(sid);
+      dropSessionForwards(sid);
+    }
     this.releaseSession();
     window.clearTimeout(this.fitTimer);
     this.observer?.disconnect();

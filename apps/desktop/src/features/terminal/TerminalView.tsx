@@ -9,6 +9,8 @@ import { useT } from "@/i18n";
 import { shortcutLabel } from "@/lib/platform";
 import { cx } from "@/lib/cx";
 import { editSessionHost, reconnectSession } from "./connect";
+import { countRunning, useForwardRuns } from "./forwards";
+import { ForwardsPopover } from "./ForwardsPopover";
 import { FindBar } from "./FindBar";
 import { patchInfo, useSessionInfo } from "./info";
 import { ConnectingOverlay, DisconnectedBanner, ErrorCard } from "./Overlays";
@@ -36,6 +38,8 @@ function TerminalBody({ tab, active, session }: { tab: SessionTab; active: boole
   const [findOpen, setFindOpen] = useState(false);
   const menu = useMenu();
   const [menuEntries, setMenuEntries] = useState<MenuEntry[]>([]);
+  const forwardsMenu = useMenu();
+  const forwardRuns = useForwardRuns(tab.sessionId);
 
   // The xterm instance lives in the session registry; React only gives it a place in the DOM.
   useLayoutEffect(() => {
@@ -64,6 +68,10 @@ function TerminalBody({ tab, active, session }: { tab: SessionTab; active: boole
   }, [session]);
 
   const connected = tab.status === "connected";
+  const closeForwards = forwardsMenu.close;
+  useEffect(() => {
+    if (!active || !connected) closeForwards(); // a popover must not outlive its tab being visible / connected
+  }, [active, connected, closeForwards]);
   const target = host ? `${host.username}@${host.address}:${host.port}` : null;
 
   const buildMenu = (context: boolean): MenuEntry[] => {
@@ -139,8 +147,11 @@ function TerminalBody({ tab, active, session }: { tab: SessionTab; active: boole
         latencyMs={info.latencyMs}
         findOpen={findOpen}
         sftpOpen={info.sftpOpen}
+        forwardCount={countRunning(forwardRuns)}
+        forwardsOpen={!!forwardsMenu.anchor}
         findHint={shortcutLabel(platform, "Ctrl+Shift+F", "⌘F")}
         onFind={() => (findOpen ? closeFind() : setFindOpen(true))}
+        onForwards={(button) => (forwardsMenu.anchor ? forwardsMenu.close() : forwardsMenu.openBelow(button, true))}
         onToggleSftp={() => {
           patchInfo(tab.id, { sftpOpen: !info.sftpOpen });
           session.focus(); // keep typing in the terminal after toggling the panel
@@ -174,6 +185,18 @@ function TerminalBody({ tab, active, session }: { tab: SessionTab; active: boole
           <SftpPanel key={tab.sessionId} sessionId={tab.sessionId} hostName={host?.name ?? tab.title} active={active} />
         )}
       </div>
+      {forwardsMenu.anchor && tab.sessionId && connected && (
+        <ForwardsPopover
+          anchor={forwardsMenu.anchor}
+          sessionId={tab.sessionId}
+          hostId={tab.hostId}
+          onClose={(restoreFocus) => {
+            forwardsMenu.close();
+            if (restoreFocus) session.focus();
+          }}
+          onManage={() => editSessionHost(tab.hostId)}
+        />
+      )}
       {menu.anchor && <Menu anchor={menu.anchor} entries={menuEntries} onClose={menu.close} minWidth={168} />}
     </div>
   );

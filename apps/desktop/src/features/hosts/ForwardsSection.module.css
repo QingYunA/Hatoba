@@ -1,0 +1,78 @@
+/* Port forwarding rows of the host editor: mono rule · auto-start switch · edit / delete. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 8px 6px 14px;
+  min-width: 0;
+}
+
+.rule {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arrow {
+  margin: 0 7px;
+  color: var(--fg3);
+}
+
+.auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+
+.actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  color: var(--fg2);
+}
+
+.remove:hover:not(:disabled) {
+  color: var(--red);
+}
+
+.footRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+/* No forwards yet: the hint sits left, the add link right. */
+.footSplit {
+  justify-content: space-between;
+}
+
+.muted {
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+
+.error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-sm);
+  color: var(--red);
+}
+
+.hint {
+  padding-left: 2px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg2);
+}

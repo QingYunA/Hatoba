@@ -79,3 +79,25 @@
   color: var(--accent);
   font-weight: 500;
 }
+
+/* Port forwarding button: an icon button with a count of running forwards. */
+.fwd {
+  position: relative;
+}
+
+.fwdCount {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
