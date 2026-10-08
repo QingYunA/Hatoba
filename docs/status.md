@@ -85,4 +85,4 @@
 
 ## 发布（§11）
 
-Authenticode 代码签名与 Tauri updater（P1）尚未配置；CI 会在 `windows-latest` 上构建未签名的 NSIS 安装包。
+Authenticode 代码签名与 Tauri updater（P1）尚未配置；推送到 `main` 或手动触发 CI 时，会在 `windows-latest` 上构建未签名的 NSIS 安装包（PR 不构建）。
