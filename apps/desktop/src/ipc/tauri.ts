@@ -74,6 +74,7 @@ export function createTauriApi(): HatobaApi {
     sync_test: (config) => call("sync_test", { config }),
     sync_configure: (config, password) => call("sync_configure", { config, password }),
     sync_now: () => call("sync_now"),
+    sync_login: (password) => call("sync_login", { password }),
     sync_set_auto: (enabled) => call("sync_set_auto", { enabled }),
     sync_disconnect: () => call("sync_disconnect"),
     sync_devices: () => call("sync_devices"),
@@ -87,6 +88,7 @@ export function createTauriApi(): HatobaApi {
     prefs_save: (prefs) => call("prefs_save", { prefs }),
 
     window_snap_overlay: () => call("window_snap_overlay"),
+    save_text_file: (path, contents) => call("save_text_file", { path, contents }),
 
     listen: (event, handler) => tauriListen(event, (e) => handler(e.payload as never)),
   };

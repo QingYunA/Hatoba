@@ -110,6 +110,8 @@ export interface HatobaApi {
   /** Flow A: initialise the remote (Setup Token) and push the local vault. Needs the master password. */
   sync_configure(config: SyncConfigInput, password: string): Promise<void>;
   sync_now(): Promise<void>;
+  /** Re-authenticate after the session expired or was revoked ("auth_failed"). */
+  sync_login(password: string): Promise<void>;
   sync_set_auto(enabled: boolean): Promise<void>;
   sync_disconnect(): Promise<void>;
   sync_devices(): Promise<DeviceView[]>;
@@ -126,6 +128,8 @@ export interface HatobaApi {
 
   // window (Windows custom title bar, WIN-01)
   window_snap_overlay(): Promise<void>;
+  /** Write a text file to a path the user picked in the native save dialog (recovery code "Save as Text"). */
+  save_text_file(path: string, contents: string): Promise<void>;
 
   // events
   listen<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void): Promise<Unlisten>;

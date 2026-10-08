@@ -1,0 +1,99 @@
+.window {
+  position: relative;
+  width: 700px;
+  height: 620px;
+  max-width: 100%;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  background: var(--win);
+  color: var(--fg);
+  font-size: var(--text-md);
+  line-height: 1.35;
+  box-shadow: 0 0 0 0.5px var(--winline), var(--shadow);
+  animation: rise 0.16s ease-out;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+}
+
+.toolbar {
+  position: relative;
+  flex: none;
+  background: var(--side);
+  border-bottom: 0.5px solid var(--line2);
+}
+
+.titleRow {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.close {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  color: var(--fg2);
+}
+
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 0 8px;
+}
+
+.tab {
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg2);
+}
+
+.tab i {
+  font-size: 20px;
+}
+
+.tab span {
+  font-size: var(--text-xs);
+}
+
+.tab:hover {
+  background: var(--fill);
+}
+
+.tabOn,
+.tabOn:hover {
+  background: var(--fill2);
+  color: var(--fg);
+}
+
+.tabOn i {
+  color: var(--accent);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 32px;
+}

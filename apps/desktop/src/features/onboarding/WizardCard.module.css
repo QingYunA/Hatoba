@@ -1,0 +1,132 @@
+.card {
+  width: 540px;
+  max-width: 100%;
+  margin: 0;
+  background: var(--sheet);
+  border-radius: var(--radius-window);
+  box-shadow: 0 0 0 0.5px var(--winline), var(--shadow);
+  color: var(--fg);
+  font-size: var(--text-md);
+  line-height: 1.4;
+  overflow: hidden;
+  animation: rise 0.18s ease-out;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+
+.body {
+  padding: 22px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 0.5px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-wizard);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--fg2);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepCurrent {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.rule {
+  flex: 1;
+  height: 0.5px;
+  background: var(--line2);
+  width: 0;
+  min-width: 0;
+}
+
+/* Rules stretch between steps: give each separator the remaining width. */
+.steps > li:not(:first-child) {
+  flex: 1;
+}
+
+.steps > li:not(:first-child) .rule {
+  flex: 1;
+  margin-right: 2px;
+}
+
+.bubble {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  box-shadow: inset 0 0 0 1px var(--line2);
+  flex: none;
+}
+
+.bubbleDone {
+  background: var(--accenttint);
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.bubbleDone i {
+  font-size: 11px;
+}
+
+.bubbleCurrent {
+  background: var(--accent);
+  box-shadow: none;
+  color: #ffffff;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--red);
+}
+
+.error i {
+  margin-top: 1px;
+  flex: none;
+}

@@ -1,0 +1,148 @@
+.page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shared by the column header and every row (design §01: name · address · tags · last connected · action). */
+.cols {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1.1fr) 104px 64px;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.scroll:focus-visible {
+  outline: none;
+}
+
+.head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--win);
+}
+
+.headName {
+  padding-left: 16px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 12px 12px;
+}
+
+.row {
+  display: grid;
+  gap: 16px;
+  align-items: center;
+  height: var(--row);
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 -0.5px 0 var(--line);
+  /* Skip layout/paint for rows that are off screen: keeps 1,000-host lists instant. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--row);
+}
+
+.row:hover {
+  background: var(--fill);
+}
+
+.rowSel,
+.rowSel:hover {
+  background: var(--rowsel);
+}
+
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fav {
+  font-size: 11px;
+  color: var(--fg3);
+  flex: none;
+}
+
+.addrCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.addr {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dim {
+  color: var(--fg2);
+}
+
+.via {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+
+.via i {
+  font-size: 12px;
+}
+
+.tags {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.last {
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+.lastFailed {
+  color: var(--red);
+}
+
+.action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.connect {
+  opacity: 0;
+}
+
+.row:hover .connect,
+.rowSel .connect {
+  opacity: 1;
+}

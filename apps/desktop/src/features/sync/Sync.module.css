@@ -1,0 +1,350 @@
+/* Sync status + conflicts (design §05b / §05c) */
+
+.page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 28px 24px;
+}
+
+.column {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  align-self: flex-start;
+}
+
+.columnTight {
+  gap: 18px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.sub {
+  font-size: 12.5px;
+  color: var(--fg2);
+  margin-top: 2px;
+  text-wrap: pretty;
+}
+
+.spin i {
+  display: inline-block;
+  animation: spin 1.1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Re-login (auth_failed) */
+.relogin {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--radius-panel);
+  background: var(--group);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+.reloginRow {
+  display: flex;
+  gap: 8px;
+}
+
+.reloginRow > :first-child {
+  flex: 1;
+}
+
+.reloginError {
+  font-size: var(--text-sm);
+  color: var(--red);
+}
+
+/* "N conflicts resolved automatically · Review" */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--orange) 40%, transparent);
+}
+
+.bannerIcon {
+  font-size: 16px;
+  color: var(--orange);
+}
+
+.bannerText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Devices */
+.device {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 14px;
+}
+
+.deviceIcon {
+  font-size: 20px;
+  color: var(--fg2);
+}
+
+.deviceText {
+  flex: 1;
+  min-width: 0;
+}
+
+.deviceName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deviceNameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--fill);
+}
+
+.deviceMeta {
+  font-size: 11.5px;
+  color: var(--fg2);
+  margin-top: 1px;
+}
+
+.device > .deviceMeta {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.removeLink {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* Non-stale devices: the remove action appears on hover / keyboard focus only. */
+.removeQuiet {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.device:hover .removeQuiet,
+.device:focus-within .removeQuiet {
+  opacity: 1;
+}
+
+/* Security note */
+.security {
+  display: flex;
+  gap: 12px;
+  padding: 2px;
+}
+
+.securityIcon {
+  font-size: 18px;
+  color: var(--fg2);
+  margin-top: 1px;
+  flex: none;
+}
+
+.securityText {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fg2);
+  text-wrap: pretty;
+}
+
+.securityTitle {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.securityLinks {
+  margin-top: 8px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.securityLink {
+  font-size: 12.5px;
+}
+
+/* Conflict cards */
+.conflict {
+  border-radius: var(--radius-panel);
+  background: var(--group);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  overflow: hidden;
+}
+
+.conflictHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.conflictIcon {
+  font-size: 16px;
+  color: var(--fg2);
+  flex: none;
+}
+
+.conflictName {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conflictDesc {
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  min-width: 0;
+}
+
+.diff {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) minmax(0, 1fr);
+  border-top: 0.5px solid var(--line);
+  font-size: 12.5px;
+}
+
+.diffRow {
+  display: contents;
+}
+
+.diffHead,
+.diffLabel,
+.diffValue {
+  padding: 8px 14px;
+  min-width: 0;
+}
+
+.diffHead {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg2);
+  border-left: 0.5px solid var(--line);
+}
+
+.diffLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 0.5px solid var(--line);
+}
+
+.diffDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--orange);
+  flex: none;
+}
+
+.diffValue {
+  border-top: 0.5px solid var(--line);
+  border-left: 0.5px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.dim {
+  color: var(--fg2);
+}
+
+.conflictFoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--line);
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  text-wrap: pretty;
+}
+
+.result i {
+  color: var(--green);
+  font-size: 14px;
+  flex: none;
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+
+.note i {
+  font-size: 15px;
+}
+
+.empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--fg2);
+}

@@ -1,0 +1,114 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  flex-direction: column;
+  background: var(--side);
+  color: var(--fg);
+  overflow-y: auto;
+}
+
+/* A fixed top offset keeps the logo in place while the card changes height between steps. */
+.center {
+  margin: 0 auto;
+  padding: calc(40px + 9vh) 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-icon);
+  background: var(--logo-bg);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--group);
+  box-shadow: inset 0 0 0 0.5px var(--line2);
+  text-align: left;
+  align-items: flex-start;
+}
+
+.option:hover {
+  background: var(--fill);
+}
+
+.optionOn,
+.optionOn:hover {
+  background: var(--accenttint);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.radio {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--fieldline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radioOn {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.radioDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.optionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.optionTitle {
+  font-weight: 600;
+}
+
+.optionBody {
+  margin-top: 4px;
+  color: var(--fg2);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.optionIcon {
+  font-size: 22px;
+  color: var(--fg2);
+}
+
+.optionOn .optionIcon {
+  color: var(--accent);
+}

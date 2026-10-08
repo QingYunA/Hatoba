@@ -1,0 +1,70 @@
+import { Icon, IconButton, StatusDot } from "@/components/controls";
+import { useT } from "@/i18n";
+import type { TabStatus } from "@/app/tabs";
+import { cx } from "@/lib/cx";
+import s from "./StatusBar.module.css";
+
+const DOT: Record<TabStatus, string> = {
+  connecting: "var(--orange)",
+  connected: "var(--green)",
+  failed: "var(--red)",
+  disconnected: "var(--fg3)",
+};
+
+interface Props {
+  status: TabStatus;
+  /** `user@host:port`, when the host still exists. */
+  target: string | null;
+  /** Name of the jump host (SSH-10). */
+  via: string | null;
+  latencyMs: number | null;
+  findOpen: boolean;
+  sftpOpen: boolean;
+  findHint: string;
+  onFind(): void;
+  onToggleSftp(): void;
+  onMore(button: HTMLElement): void;
+}
+
+/** The 36px bar above a terminal (design §03 / §03b). */
+export function StatusBar({ status, target, via, latencyMs, findOpen, sftpOpen, findHint, onFind, onToggleSftp, onMore }: Props) {
+  const t = useT();
+  const connected = status === "connected";
+  return (
+    <div className={s.bar}>
+      <span className={s.state} role="status">
+        <StatusDot color={DOT[status]} />
+        {t(`terminal.status.${status}`)}
+      </span>
+      <span className={s.sep} />
+      {target && <span className={s.target}>{target}</span>}
+      {via && (
+        <span className={s.via}>
+          <Icon name="path" size={12} />
+          {t("terminal.via")} {via}
+        </span>
+      )}
+      {connected && latencyMs != null && <span className={s.latency}>{latencyMs} ms</span>}
+      <div className={s.spacer} />
+      <IconButton icon="magnifying-glass" label={`${t("terminal.find")} (${findHint})`} active={findOpen} onClick={onFind} />
+      <button
+        type="button"
+        className={cx(s.sftp, sftpOpen && connected && s.sftpOn)}
+        disabled={!connected}
+        aria-pressed={sftpOpen && connected}
+        title={t("terminal.sftpToggle")}
+        onClick={onToggleSftp}
+      >
+        <Icon name="folder-simple" size={14} />
+        {t("terminal.sftp")}
+      </button>
+      <IconButton
+        icon="dots-three"
+        size={16}
+        label={t("terminal.more")}
+        aria-haspopup="menu"
+        onClick={(e) => onMore(e.currentTarget)}
+      />
+    </div>
+  );
+}

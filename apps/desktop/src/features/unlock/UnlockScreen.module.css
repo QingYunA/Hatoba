@@ -1,0 +1,215 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  flex-direction: column;
+  background: var(--side);
+  color: var(--fg);
+  text-align: center;
+}
+
+.center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 30px;
+}
+
+.logo {
+  width: 68px;
+  height: 68px;
+  border-radius: 16px;
+  background: var(--logo-bg);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.title {
+  margin: 18px 0 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--fg2);
+}
+
+.form {
+  margin-top: 24px;
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.field {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 11px;
+  border-radius: 8px;
+  background: var(--field);
+  box-shadow: 0 0 0 0.5px var(--fieldline);
+}
+
+.field:focus-within {
+  box-shadow: var(--focus-ring);
+}
+
+.field.fieldError,
+.field.fieldError:focus-within {
+  box-shadow: var(--error-ring);
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  outline: none;
+  letter-spacing: 1.5px;
+  font-size: var(--text-md);
+}
+
+.field input:disabled {
+  opacity: 0.5;
+}
+
+.go {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.go:disabled {
+  background: var(--fill2);
+  color: var(--fg3);
+}
+
+.shake {
+  animation: shake 0.36s ease-in-out;
+}
+
+@keyframes shake {
+  15% {
+    transform: translateX(-7px);
+  }
+  35% {
+    transform: translateX(6px);
+  }
+  55% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+/* Reserved height so the layout doesn't jump when an error appears. */
+.message {
+  min-height: 16px;
+  margin: -4px 0 -4px;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--red);
+  text-align: center;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 0.5px;
+  background: var(--line2);
+}
+
+.biometric {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--btn);
+  box-shadow: var(--shadow-btn);
+}
+
+.biometric i {
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.biometric:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--btn) 92%, var(--fg) 8%);
+}
+
+.biometric:disabled {
+  opacity: 0.5;
+}
+
+.forgot {
+  margin-top: 18px;
+  border: 0;
+  padding: 0;
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--accent);
+}
+
+.forgot:hover {
+  text-decoration: underline;
+}
+
+.foot {
+  padding: 0 24px 20px;
+  font-size: 11.5px;
+  color: var(--fg2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sessions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sessionDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}

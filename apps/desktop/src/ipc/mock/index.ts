@@ -401,11 +401,12 @@ export function createMockApi(): HatobaApi {
       if (config.kind === "d1") {
         if (config.api_token.length < 20)
           return { ok: false, initialized: false, version: null, latency_ms: null, databases: null, error: { code: "sync", detail: "token lacks D1 edit permission" } };
-        return { ok: true, initialized: false, version: null, latency_ms: 64, databases: [{ id: "3f8a2c91-d04e-4b7a-a1e6-c5d2b9f07e13", name: "hatoba", region: "APAC" }], error: null };
+        return { ok: true, initialized: demo === "onboarding", version: null, latency_ms: 64, databases: [{ id: "3f8a2c91-d04e-4b7a-a1e6-c5d2b9f07e13", name: "hatoba", region: "APAC" }], error: null };
       }
       if (!/^https?:\/\//.test(config.url) && !config.url.includes("."))
         return { ok: false, initialized: false, version: null, latency_ms: null, databases: null, error: { code: "sync_offline", detail: "dns" } };
-      return { ok: true, initialized: false, version: "0.1.0", latency_ms: 64, databases: null, error: null };
+      // First-launch demo (flow B) restores from a remote that already holds a vault.
+      return { ok: true, initialized: demo === "onboarding", version: "0.1.0", latency_ms: 64, databases: null, error: null };
     },
     sync_configure: async (config, password) => {
       await delay(1200);
@@ -424,6 +425,11 @@ export function createMockApi(): HatobaApi {
       setSync({ state: "syncing" });
       await delay(900);
       setSync({ state: "idle", pending: 0, last_synced_at: Date.now() });
+    },
+    sync_login: async (password) => {
+      await delay(600);
+      if (password.length < 4) fail("wrong_password");
+      setSync({ state: "idle", last_synced_at: Date.now() });
     },
     sync_set_auto: async (enabled) => setSync({ auto_sync: enabled }),
     sync_disconnect: async () => {
@@ -452,6 +458,14 @@ export function createMockApi(): HatobaApi {
     },
 
     window_snap_overlay: async () => {},
+    save_text_file: async (path, contents) => {
+      // Browser fallback: download the text instead of writing to `path`.
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([contents], { type: "text/plain" }));
+      a.download = path.split(/[\\/]/).pop() || "hatoba.txt";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
 
     listen: async (event, handler): Promise<Unlisten> => {
       let set = listeners.get(event);

@@ -1,0 +1,60 @@
+[package]
+name = "hatoba-desktop"
+description = "Hatoba desktop app (Tauri shell)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "hatoba_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+hatoba-core.workspace = true
+hatoba-ssh.workspace = true
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+tauri-plugin-clipboard-manager = "2.4"
+tauri-plugin-opener = "2.7"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta.workspace = true
+specta-typescript = "0.0.12"
+tokio.workspace = true
+tokio-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+zeroize.workspace = true
+uuid.workspace = true
+base64.workspace = true
+keyring = { version = "3.6", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
+dirs = "6"
+bytes.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+window-vibrancy = "0.8"
+windows = { version = "0.62", features = [
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_Power",
+  "Win32_UI_WindowsAndMessaging",
+  "Security_Credentials",
+  "Security_Credentials_UI",
+  "Security_Cryptography",
+  "Storage_Streams",
+  "Foundation",
+] }
+
+[features]
+# Enables devtools in release builds. Never enabled for distributed builds (SEC-05).
+devtools = ["tauri/devtools"]

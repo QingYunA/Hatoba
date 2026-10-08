@@ -1,0 +1,54 @@
+.bar {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 8px;
+  border-radius: 9px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-popover);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+}
+
+.input,
+.input:focus-visible {
+  width: 170px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--text-md);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--fg2);
+}
+
+.inputNone {
+  color: var(--red);
+}
+
+.count {
+  min-width: 44px;
+  padding: 0 6px;
+  text-align: right;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+}
+
+.countNone {
+  color: var(--red);
+}
+
+.button {
+  width: 24px;
+  height: 24px;
+  color: var(--fg2);
+}

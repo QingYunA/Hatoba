@@ -1,0 +1,144 @@
+.thumbs {
+  display: flex;
+  gap: 14px;
+}
+
+.thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+.preview {
+  width: 92px;
+  height: 60px;
+  border-radius: 7px;
+  overflow: hidden;
+  display: flex;
+}
+
+.light {
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+}
+
+.dark {
+  background: #1e1e20;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.system {
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+}
+
+.previewOn {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 4.5px var(--accenttint);
+}
+
+.thumb:focus-visible .preview {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.side {
+  width: 26px;
+  flex: none;
+}
+
+.light .side {
+  background: #e4e4ea;
+}
+
+.dark .side,
+.preview.dark .side {
+  background: #38383d;
+}
+
+.lines {
+  flex: 1;
+  padding: 8px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lines i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.preview.light .lines i:nth-child(1) {
+  background: #d4d4da;
+}
+
+.preview.light .lines i {
+  background: #e6e6ea;
+}
+
+.preview.dark .lines i:nth-child(1) {
+  background: #4a4a50;
+}
+
+.preview.dark .lines i {
+  background: #36363b;
+}
+
+/* "Auto": left half light, right half dark */
+.half {
+  flex: 1;
+  display: flex;
+  box-shadow: none;
+}
+
+.half.light {
+  background: #ffffff;
+}
+
+.half.dark {
+  background: #1e1e20;
+}
+
+.half.light .lines {
+  padding: 8px 0 0 7px;
+}
+
+.half.light .lines i {
+  border-radius: 2px 0 0 2px;
+  background: #e6e6ea;
+}
+
+.half.light .lines i:first-child {
+  background: #d4d4da;
+}
+
+.half.dark .lines {
+  padding: 8px 7px 0 0;
+}
+
+.half.dark .lines i {
+  border-radius: 0 2px 2px 0;
+  background: #36363b;
+}
+
+.half.dark .lines i:first-child {
+  background: #4a4a50;
+}
+
+.thumbLabel {
+  font-size: 11.5px;
+  color: var(--fg2);
+}
+
+.thumbLabelOn {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.langButton {
+  width: 200px;
+}

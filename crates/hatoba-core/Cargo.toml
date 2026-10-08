@@ -1,0 +1,46 @@
+[package]
+name = "hatoba-core"
+description = "Crypto, vault, data model, local store and sync engine for Hatoba"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+# Relaxes the KDF cost floor and exposes `KdfParams::for_tests()`. For tests only; never enable
+# in a shipping build.
+test-util = []
+
+[dependencies]
+# Shared with the rest of the workspace.
+tokio = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+zeroize = { workspace = true, features = ["serde"] }
+async-trait.workspace = true
+base64.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+
+# Crypto (RustCrypto "0.6 / 0.13 / 0.11" generation; keep these in lock-step).
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+hkdf = "0.13"
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc", "zeroize"] }
+getrandom = "0.4"
+subtle = "2.6"
+
+# Local store. `bundled` so the same SQLite (with `secure_delete`, RETURNING, WAL) ships on every platform.
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Sync transport: rustls only (no native-tls / openssl). The `ring` provider is used so the
+# whole app shares a single crypto backend with `russh`; it is installed by `sync::http`.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "charset", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6"

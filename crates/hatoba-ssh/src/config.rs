@@ -1,0 +1,540 @@
+//! `~/.ssh/config` import (SSH-11).
+//!
+//! Only the options Hatoba can map onto a host entry are understood: `Host`,
+//! `HostName`, `User`, `Port`, `IdentityFile` and `ProxyJump`. Lookup follows
+//! OpenSSH semantics: blocks are evaluated in file order and the first value
+//! obtained for an option wins (`IdentityFile` accumulates).
+//! `Match` blocks and `Include` are ignored.
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+
+/// One concrete host alias from an SSH config file with all matching
+/// blocks (including `Host *` defaults) already applied.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct SshConfigHost {
+    /// The alias used on the `Host` line.
+    pub alias: String,
+    /// `HostName` (real address); `None` means the alias itself is the address.
+    pub hostname: Option<String>,
+    /// `User`.
+    pub user: Option<String>,
+    /// `Port`.
+    pub port: Option<u16>,
+    /// `IdentityFile` entries in order of precedence, `~` and `%d` expanded.
+    pub identity_files: Vec<String>,
+    /// Raw `ProxyJump` value, e.g. `user@bastion:2222,other`.
+    pub proxy_jump: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct Block {
+    /// Patterns of the `Host` line; empty for the implicit global block.
+    patterns: Vec<String>,
+    /// `Match` blocks are parsed but never applied.
+    ignored: bool,
+    hostname: Option<String>,
+    user: Option<String>,
+    port: Option<u16>,
+    identity_files: Vec<String>,
+    proxy_jump: Option<String>,
+}
+
+/// Parses SSH config text, expanding `~` / `%d` using the current user's home
+/// directory (`HOME`, or `USERPROFILE` on Windows).
+pub fn parse_ssh_config(text: &str) -> Vec<SshConfigHost> {
+    parse_ssh_config_with_home(text, home_dir().as_deref())
+}
+
+/// Like [`parse_ssh_config`] with an explicit home directory (for tests and
+/// for importing a config file that belongs to another profile).
+pub fn parse_ssh_config_with_home(text: &str, home: Option<&str>) -> Vec<SshConfigHost> {
+    let blocks = parse_blocks(text);
+
+    // Concrete aliases in order of first appearance.
+    let mut aliases: Vec<String> = Vec::new();
+    for block in blocks.iter().filter(|b| !b.ignored) {
+        for p in &block.patterns {
+            if !is_wildcard_or_negated(p) && !aliases.iter().any(|a| a == p) {
+                aliases.push(p.clone());
+            }
+        }
+    }
+
+    aliases
+        .into_iter()
+        .map(|alias| resolve_alias(&alias, &blocks, home))
+        .collect()
+}
+
+fn home_dir() -> Option<String> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .and_then(|p| p.to_str().map(str::to_owned))
+        .filter(|s| !s.is_empty())
+}
+
+fn is_wildcard_or_negated(pattern: &str) -> bool {
+    pattern.starts_with('!') || pattern.contains(['*', '?'])
+}
+
+fn parse_blocks(text: &str) -> Vec<Block> {
+    let mut blocks = vec![Block::default()];
+    for raw in text.lines() {
+        let Some((keyword, args)) = split_directive(raw) else {
+            continue;
+        };
+        match keyword.to_ascii_lowercase().as_str() {
+            "host" => blocks.push(Block {
+                ignored: args.is_empty(),
+                patterns: args,
+                ..Block::default()
+            }),
+            "match" => blocks.push(Block {
+                ignored: true,
+                ..Block::default()
+            }),
+            kw => {
+                let Some(block) = blocks.last_mut() else {
+                    continue;
+                };
+                let first = args.into_iter().next();
+                match (kw, first) {
+                    ("hostname", Some(v)) => {
+                        block.hostname.get_or_insert(v);
+                    }
+                    ("user", Some(v)) => {
+                        block.user.get_or_insert(v);
+                    }
+                    ("port", Some(v)) => {
+                        if block.port.is_none() {
+                            block.port = v.parse().ok();
+                        }
+                    }
+                    ("identityfile", Some(v)) => block.identity_files.push(v),
+                    ("proxyjump", Some(v)) => {
+                        block.proxy_jump.get_or_insert(v);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    blocks
+}
+
+fn resolve_alias(alias: &str, blocks: &[Block], home: Option<&str>) -> SshConfigHost {
+    let mut host = SshConfigHost {
+        alias: alias.to_owned(),
+        ..SshConfigHost::default()
+    };
+    // Tracks "set" separately from the value so `ProxyJump none` still wins.
+    let mut proxy_set = false;
+
+    for block in blocks
+        .iter()
+        .filter(|b| !b.ignored && block_applies(b, alias))
+    {
+        if host.hostname.is_none() {
+            host.hostname = block.hostname.clone();
+        }
+        if host.user.is_none() {
+            host.user = block.user.clone();
+        }
+        if host.port.is_none() {
+            host.port = block.port;
+        }
+        host.identity_files
+            .extend(block.identity_files.iter().cloned());
+        if !proxy_set && let Some(pj) = &block.proxy_jump {
+            proxy_set = true;
+            host.proxy_jump = (!pj.eq_ignore_ascii_case("none")).then(|| pj.clone());
+        }
+    }
+
+    // `%h` inside HostName itself refers to the alias typed by the user.
+    let mut ctx = ExpandCtx {
+        alias,
+        hostname: alias.to_owned(),
+        user: host.user.clone(),
+        port: host.port.unwrap_or(22),
+        home,
+    };
+    host.hostname = host.hostname.map(|h| expand_tokens(&h, &ctx));
+    // Everything else sees the final HostName.
+    ctx.hostname = host.hostname.clone().unwrap_or_else(|| alias.to_owned());
+    host.identity_files = host
+        .identity_files
+        .iter()
+        .filter(|f| !f.eq_ignore_ascii_case("none"))
+        .map(|f| expand_path(f, &ctx))
+        .collect();
+    host
+}
+
+fn block_applies(block: &Block, alias: &str) -> bool {
+    if block.patterns.is_empty() {
+        return true; // global section before the first Host line
+    }
+    let mut matched = false;
+    for p in &block.patterns {
+        if let Some(negated) = p.strip_prefix('!') {
+            if glob_match(negated, alias) {
+                return false;
+            }
+        } else if glob_match(p, alias) {
+            matched = true;
+        }
+    }
+    matched
+}
+
+/// Case-insensitive `*` / `?` glob match.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.to_lowercase().chars().collect();
+    let t: Vec<char> = text.to_lowercase().chars().collect();
+    let (mut pi, mut ti) = (0, 0);
+    let (mut star, mut mark) = (None, 0);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
+}
+
+struct ExpandCtx<'a> {
+    alias: &'a str,
+    hostname: String,
+    user: Option<String>,
+    port: u16,
+    home: Option<&'a str>,
+}
+
+/// Expands `%h %n %p %r %d %%`; unknown tokens are kept verbatim.
+fn expand_tokens(value: &str, ctx: &ExpandCtx<'_>) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('%') => out.push('%'),
+            Some('h') => out.push_str(&ctx.hostname),
+            Some('n') => out.push_str(ctx.alias),
+            Some('p') => out.push_str(&ctx.port.to_string()),
+            Some('r') => match &ctx.user {
+                Some(u) => out.push_str(u),
+                None => out.push_str("%r"),
+            },
+            Some('d') => match ctx.home {
+                Some(h) => out.push_str(h),
+                None => out.push_str("%d"),
+            },
+            Some(other) => {
+                out.push('%');
+                out.push(other);
+            }
+            None => out.push('%'),
+        }
+    }
+    out
+}
+
+fn expand_path(value: &str, ctx: &ExpandCtx<'_>) -> String {
+    let expanded = expand_tokens(value, ctx);
+    match (expanded.strip_prefix('~'), ctx.home) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            format!("{home}{rest}")
+        }
+        _ => expanded,
+    }
+}
+
+/// Splits a config line into its keyword and arguments. Returns `None` for
+/// blank lines and comments.
+fn split_directive(line: &str) -> Option<(String, Vec<String>)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    let key_end = line
+        .find(|c: char| c.is_whitespace() || c == '=')
+        .unwrap_or(line.len());
+    let keyword = &line[..key_end];
+    let mut rest = line[key_end..].trim_start();
+    if let Some(r) = rest.strip_prefix('=') {
+        rest = r.trim_start();
+    }
+    Some((keyword.to_owned(), tokenize(rest)))
+}
+
+/// Whitespace-separated arguments with `"double quote"` support; an unquoted
+/// token starting with `#` begins a comment.
+fn tokenize(s: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut chars = s.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        match chars.peek() {
+            None => break,
+            Some('#') => break,
+            _ => {}
+        }
+        let mut token = String::new();
+        let mut in_quotes = false;
+        while let Some(&c) = chars.peek() {
+            if c == '"' {
+                in_quotes = !in_quotes;
+                chars.next();
+            } else if c == '\\' && in_quotes {
+                chars.next();
+                if let Some(escaped) = chars.next_if(|n| *n == '"' || *n == '\\') {
+                    token.push(escaped);
+                } else {
+                    token.push('\\');
+                }
+            } else if c.is_whitespace() && !in_quotes {
+                break;
+            } else {
+                token.push(c);
+                chars.next();
+            }
+        }
+        tokens.push(token);
+    }
+    tokens
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(text: &str) -> Vec<SshConfigHost> {
+        parse_ssh_config_with_home(text, Some("/home/me"))
+    }
+
+    #[test]
+    fn basic_hosts() {
+        let hosts = parse(
+            "Host prod\n  HostName 10.0.0.5\n  User deploy\n  Port 2222\n  IdentityFile ~/.ssh/prod_ed25519\n\nHost dev\n  HostName dev.example.com\n",
+        );
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].alias, "prod");
+        assert_eq!(hosts[0].hostname.as_deref(), Some("10.0.0.5"));
+        assert_eq!(hosts[0].user.as_deref(), Some("deploy"));
+        assert_eq!(hosts[0].port, Some(2222));
+        assert_eq!(hosts[0].identity_files, vec!["/home/me/.ssh/prod_ed25519"]);
+        assert_eq!(hosts[1].alias, "dev");
+        assert_eq!(hosts[1].user, None);
+        assert_eq!(hosts[1].port, None);
+    }
+
+    #[test]
+    fn multiple_aliases_yield_multiple_entries() {
+        let hosts = parse("Host a b\n  HostName shared.example.com\n");
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].alias, "a");
+        assert_eq!(hosts[1].alias, "b");
+        assert_eq!(hosts[1].hostname.as_deref(), Some("shared.example.com"));
+    }
+
+    #[test]
+    fn wildcard_and_negated_patterns_are_skipped() {
+        let hosts = parse(
+            "Host *\n  User x\nHost !foo\n  Port 1\nHost *.example.com\n  Port 2\nHost real\n",
+        );
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].alias, "real");
+    }
+
+    #[test]
+    fn host_star_defaults_apply_first_value_wins() {
+        let hosts = parse(
+            "Host web\n  User alice\n  IdentityFile ~/.ssh/web\n\nHost db\n  Port 5432\n\nHost *\n  User default\n  Port 2200\n  IdentityFile ~/.ssh/id_default\n",
+        );
+        assert_eq!(hosts[0].user.as_deref(), Some("alice"));
+        assert_eq!(hosts[0].port, Some(2200));
+        assert_eq!(
+            hosts[0].identity_files,
+            vec!["/home/me/.ssh/web", "/home/me/.ssh/id_default"]
+        );
+        assert_eq!(hosts[1].user.as_deref(), Some("default"));
+        assert_eq!(hosts[1].port, Some(5432));
+    }
+
+    #[test]
+    fn host_star_first_wins_over_later_specific() {
+        // OpenSSH: the first obtained value wins, even if a later block is more specific.
+        let hosts = parse("Host *\n  User first\nHost web\n  User second\n");
+        assert_eq!(hosts[0].user.as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn pattern_blocks_apply_to_matching_aliases() {
+        let hosts = parse("Host web*\n  User www\nHost web1\n  HostName 1.2.3.4\n");
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].user.as_deref(), Some("www"));
+        assert_eq!(hosts[0].hostname.as_deref(), Some("1.2.3.4"));
+    }
+
+    #[test]
+    fn negation_excludes_matches() {
+        let hosts = parse("Host *.corp !secret.corp\n  User corp\nHost secret.corp other.corp\n");
+        let by_alias = |a: &str| hosts.iter().find(|h| h.alias == a).unwrap();
+        assert_eq!(by_alias("other.corp").user.as_deref(), Some("corp"));
+        assert_eq!(by_alias("secret.corp").user, None);
+    }
+
+    #[test]
+    fn keywords_case_insensitive_equals_and_quotes() {
+        let hosts = parse(
+            "host   \"my box\" other\n  hostname=1.1.1.1\n  USER = bob\n  port   \"2022\"\n  IdentityFile \"/path with space/key\"\n",
+        );
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].alias, "my box");
+        assert_eq!(hosts[0].hostname.as_deref(), Some("1.1.1.1"));
+        assert_eq!(hosts[0].user.as_deref(), Some("bob"));
+        assert_eq!(hosts[0].port, Some(2022));
+        assert_eq!(hosts[0].identity_files, vec!["/path with space/key"]);
+    }
+
+    #[test]
+    fn comments_are_ignored() {
+        let hosts = parse(
+            "# top comment\nHost a # trailing comment\n  # indented comment\n  HostName a.example.com # why\n  User u#notacomment\n",
+        );
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].alias, "a");
+        assert_eq!(hosts[0].hostname.as_deref(), Some("a.example.com"));
+        assert_eq!(hosts[0].user.as_deref(), Some("u#notacomment"));
+    }
+
+    #[test]
+    fn proxy_jump_kept_raw_and_none_disables() {
+        let hosts = parse(
+            "Host target\n  ProxyJump user@bastion:2222,other\nHost direct\n  ProxyJump none\nHost *\n  ProxyJump default-jump\n",
+        );
+        assert_eq!(
+            hosts[0].proxy_jump.as_deref(),
+            Some("user@bastion:2222,other")
+        );
+        assert_eq!(hosts[1].proxy_jump, None);
+    }
+
+    #[test]
+    fn token_expansion() {
+        let hosts = parse(
+            "Host box\n  HostName %h.internal\n  User me\n  IdentityFile %d/.ssh/%r_%h\n  IdentityFile ~\\keys\\k\n",
+        );
+        assert_eq!(hosts[0].hostname.as_deref(), Some("box.internal"));
+        assert_eq!(
+            hosts[0].identity_files,
+            vec!["/home/me/.ssh/me_box.internal", "/home/me\\keys\\k"]
+        );
+    }
+
+    #[test]
+    fn invalid_port_ignored_and_match_blocks_skipped() {
+        let hosts =
+            parse("Host a\n  Port notaport\nMatch host a\n  User ignored\nHost b\n  User kept\n");
+        assert_eq!(hosts[0].port, None);
+        assert_eq!(hosts[0].user, None);
+        assert_eq!(hosts[1].user.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn options_before_first_host_are_global_defaults() {
+        let hosts = parse("User globaluser\nHost a\n  HostName a.example\n");
+        assert_eq!(hosts[0].user.as_deref(), Some("globaluser"));
+    }
+
+    #[test]
+    fn crlf_and_empty_input() {
+        assert!(parse("").is_empty());
+        let hosts = parse("Host a\r\n  HostName x\r\n");
+        assert_eq!(hosts[0].hostname.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn realistic_windows_config() {
+        let text = "\
+# Hatoba import test
+Include config.d/*
+
+Host bastion
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/bastion_ed25519
+    IdentitiesOnly yes
+
+Host app-* !app-legacy
+    ProxyJump ops@bastion:2222
+    User deploy
+
+Host app-1 app-2 app-legacy
+    HostName %h.internal.example.com
+
+Host *
+    ServerAliveInterval 30
+    IdentityFile ~/.ssh/id_ed25519
+    IdentityFile ~/.ssh/id_rsa
+";
+        let hosts = parse_ssh_config_with_home(text, Some("C:\\Users\\me"));
+        let names: Vec<_> = hosts.iter().map(|h| h.alias.as_str()).collect();
+        assert_eq!(names, ["bastion", "app-1", "app-2", "app-legacy"]);
+
+        let bastion = &hosts[0];
+        assert_eq!(bastion.hostname.as_deref(), Some("bastion.example.com"));
+        assert_eq!(bastion.port, Some(2222));
+        assert_eq!(
+            bastion.identity_files,
+            [
+                "C:\\Users\\me/.ssh/bastion_ed25519",
+                "C:\\Users\\me/.ssh/id_ed25519",
+                "C:\\Users\\me/.ssh/id_rsa"
+            ]
+        );
+        let app1 = &hosts[1];
+        assert_eq!(app1.hostname.as_deref(), Some("app-1.internal.example.com"));
+        assert_eq!(app1.user.as_deref(), Some("deploy"));
+        assert_eq!(app1.proxy_jump.as_deref(), Some("ops@bastion:2222"));
+        // `!app-legacy` excludes the second block's settings from app-legacy.
+        let legacy = &hosts[3];
+        assert_eq!(legacy.user, None);
+        assert_eq!(legacy.proxy_jump, None);
+        assert_eq!(
+            legacy.hostname.as_deref(),
+            Some("app-legacy.internal.example.com")
+        );
+    }
+
+    #[test]
+    fn glob_matcher() {
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("web?", "web1"));
+        assert!(!glob_match("web?", "web12"));
+        assert!(glob_match("*.example.com", "a.b.example.com"));
+        assert!(!glob_match("*.example.com", "example.com"));
+        assert!(glob_match("A*b", "axxB"));
+    }
+}
