@@ -75,7 +75,10 @@ pub struct Session {
 
 impl std::fmt::Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Session").field("token", &"<redacted>").field("expires_at", &self.expires_at).finish()
+        f.debug_struct("Session")
+            .field("token", &"<redacted>")
+            .field("expires_at", &self.expires_at)
+            .finish()
     }
 }
 

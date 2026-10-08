@@ -17,11 +17,14 @@ use serde::Serialize;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{
-    self, AAD_RECOVERY_AUTH, AAD_RECOVERY_VAULT_KEY, AAD_VAULT_CHECK, AAD_VAULT_KEY, KdfParams, Key32, MasterKeys,
-    b64_encode, decode_salt, item_aad, random_key, random_salt, seal, unwrap_key, wrap_key,
+    self, AAD_RECOVERY_AUTH, AAD_RECOVERY_VAULT_KEY, AAD_VAULT_CHECK, AAD_VAULT_KEY, KdfParams,
+    Key32, MasterKeys, b64_encode, decode_salt, item_aad, random_key, random_salt, seal,
+    unwrap_key, wrap_key,
 };
 use crate::error::{Error, Result};
-use crate::model::{Group, Host, Item, KnownHost, PortForward, SETTINGS_ID, Settings, SshKey, new_id};
+use crate::model::{
+    Group, Host, Item, KnownHost, PortForward, SETTINGS_ID, Settings, SshKey, new_id,
+};
 use crate::recovery::RecoveryCode;
 use crate::store::{ItemRow, Store, StoreOps, meta};
 use crate::sync::SyncConfig;
@@ -231,7 +234,10 @@ pub(crate) fn seal_item(key: &[u8; 32], id: &str, item: &Item) -> Result<crypto:
 
 /// Item ids are what the Worker accepts: `[A-Za-z0-9_-]{1,64}`.
 fn valid_id(id: &str) -> bool {
-    (1..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 // ---- the vault ----------------------------------------------------------------------------
@@ -261,7 +267,11 @@ impl Vault {
     }
 
     fn from_store(store: Store) -> Self {
-        Self { store, clock: Arc::new(SystemClock), unlocked: None }
+        Self {
+            store,
+            clock: Arc::new(SystemClock),
+            unlocked: None,
+        }
     }
 
     /// Replaces the clock (tests).
@@ -283,7 +293,12 @@ impl Vault {
     }
 
     fn failed_attempts(&self) -> u32 {
-        let n = self.store.get_meta_i64(meta::UNLOCK_FAILURES).ok().flatten().unwrap_or(0);
+        let n = self
+            .store
+            .get_meta_i64(meta::UNLOCK_FAILURES)
+            .ok()
+            .flatten()
+            .unwrap_or(0);
         u32::try_from(n.max(0)).unwrap_or(u32::MAX)
     }
 
@@ -293,7 +308,11 @@ impl Vault {
         if delay == 0 {
             return None;
         }
-        let last = self.store.get_meta_i64(meta::UNLOCK_LAST_FAILURE_AT).ok().flatten()?;
+        let last = self
+            .store
+            .get_meta_i64(meta::UNLOCK_LAST_FAILURE_AT)
+            .ok()
+            .flatten()?;
         Some(last.saturating_add(delay))
     }
 
@@ -318,7 +337,11 @@ impl Vault {
     /// This device's id (empty before the vault exists).
     #[must_use]
     pub fn device_id(&self) -> String {
-        self.store.get_meta(meta::DEVICE_ID).ok().flatten().unwrap_or_default()
+        self.store
+            .get_meta(meta::DEVICE_ID)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
     }
 
     // ---- creation ----
@@ -337,7 +360,11 @@ impl Vault {
     ///
     /// # Errors
     /// As [`create`](Self::create).
-    pub fn create_with_params(&mut self, password: &str, params: KdfParams) -> Result<RecoveryCode> {
+    pub fn create_with_params(
+        &mut self,
+        password: &str,
+        params: KdfParams,
+    ) -> Result<RecoveryCode> {
         if self.is_initialized() {
             return Err(Error::VaultAlreadyInitialized);
         }
@@ -350,16 +377,23 @@ impl Vault {
         let recovery = RecoveryCode::generate()?;
 
         let protected = wrap_key(&keys.enc_key, AAD_VAULT_KEY, &vault_key)?;
-        let recovery_wrapped = wrap_key(&recovery.recovery_key(), AAD_RECOVERY_VAULT_KEY, &vault_key)?;
+        let recovery_wrapped =
+            wrap_key(&recovery.recovery_key(), AAD_RECOVERY_VAULT_KEY, &vault_key)?;
         let recovery_auth_sealed = seal_recovery_auth(&vault_key, &recovery.recovery_auth())?;
         let check = seal_vault_check(&vault_key)?;
-        let settings_item = Item::Settings(Settings { updated_at: self.clock.now_ms(), ..Settings::default() });
+        let settings_item = Item::Settings(Settings {
+            updated_at: self.clock.now_ms(),
+            ..Settings::default()
+        });
         let settings_envelope = seal_item(&vault_key, SETTINGS_ID, &settings_item)?;
 
         let device_id = new_id();
         let now = self.clock.now_ms();
         self.store.transaction(|tx| {
-            tx.set_meta(meta::SCHEMA_VERSION, &crate::store::SCHEMA_VERSION.to_string())?;
+            tx.set_meta(
+                meta::SCHEMA_VERSION,
+                &crate::store::SCHEMA_VERSION.to_string(),
+            )?;
             tx.set_meta(meta::KDF_SALT, &b64_encode(&salt))?;
             tx.set_meta(meta::KDF_PARAMS, &params.to_json())?;
             tx.set_meta(meta::PROTECTED_VAULT_KEY, &protected)?;
@@ -383,8 +417,14 @@ impl Vault {
     // ---- unlocking ----
 
     fn load_kdf(&self) -> Result<([u8; crypto::SALT_LEN], KdfParams)> {
-        let salt = self.store.get_meta(meta::KDF_SALT)?.ok_or(Error::VaultNotInitialized)?;
-        let params = self.store.get_meta(meta::KDF_PARAMS)?.ok_or(Error::VaultNotInitialized)?;
+        let salt = self
+            .store
+            .get_meta(meta::KDF_SALT)?
+            .ok_or(Error::VaultNotInitialized)?;
+        let params = self
+            .store
+            .get_meta(meta::KDF_PARAMS)?
+            .ok_or(Error::VaultNotInitialized)?;
         // `from_json` enforces the minimum cost, so a tampered database cannot weaken the KDF.
         Ok((decode_salt(&salt)?, KdfParams::from_json(&params)?))
     }
@@ -409,7 +449,14 @@ impl Vault {
     }
 
     fn reset_failures(&self) {
-        if self.failed_attempts() == 0 && self.store.get_meta(meta::UNLOCK_LAST_FAILURE_AT).ok().flatten().is_none() {
+        if self.failed_attempts() == 0
+            && self
+                .store
+                .get_meta(meta::UNLOCK_LAST_FAILURE_AT)
+                .ok()
+                .flatten()
+                .is_none()
+        {
             return;
         }
         let result = self
@@ -430,7 +477,10 @@ impl Vault {
         self.check_throttle()?;
         let (salt, params) = self.load_kdf()?;
         let keys = MasterKeys::from_password(password, &salt, &params);
-        let protected = self.store.get_meta(meta::PROTECTED_VAULT_KEY)?.ok_or(Error::VaultNotInitialized)?;
+        let protected = self
+            .store
+            .get_meta(meta::PROTECTED_VAULT_KEY)?
+            .ok_or(Error::VaultNotInitialized)?;
         match unwrap_key(&keys.enc_key, AAD_VAULT_KEY, &protected) {
             Ok(vault_key) => {
                 self.reset_failures();
@@ -488,7 +538,8 @@ impl Vault {
 
     pub(crate) fn finish_unlock(&mut self, vault_key: Key32) -> Result<()> {
         if self.store.get_meta(meta::VAULT_CHECK)?.is_none() {
-            self.store.set_meta(meta::VAULT_CHECK, &seal_vault_check(&vault_key)?)?;
+            self.store
+                .set_meta(meta::VAULT_CHECK, &seal_vault_check(&vault_key)?)?;
         }
         let items = self.load_items(&vault_key)?;
         // Replacing `Some(old)` drops it, which wipes it.
@@ -505,7 +556,9 @@ impl Vault {
                 }
                 Ok(None) => {}
                 // Id only: never the error detail, which could hint at contents.
-                Err(_) => tracing::warn!(item_id = %row.id, "item could not be decrypted; skipping"),
+                Err(_) => {
+                    tracing::warn!(item_id = %row.id, "item could not be decrypted; skipping")
+                }
             }
         }
         Ok(items)
@@ -606,7 +659,10 @@ impl Vault {
             return Err(Error::VaultNotInitialized);
         }
         let code = RecoveryCode::parse(code)?;
-        let wrapped = self.store.get_meta(meta::RECOVERY_VAULT_KEY)?.ok_or(Error::VaultNotInitialized)?;
+        let wrapped = self
+            .store
+            .get_meta(meta::RECOVERY_VAULT_KEY)?
+            .ok_or(Error::VaultNotInitialized)?;
         let vault_key = match unwrap_key(&code.recovery_key(), AAD_RECOVERY_VAULT_KEY, &wrapped) {
             Ok(k) => k,
             Err(Error::Decrypt) => return Err(Error::WrongRecoveryCode),
@@ -642,12 +698,16 @@ impl Vault {
     pub(crate) fn stage_recovery_rotation(&self, password: &str) -> Result<StagedRecovery> {
         let (keys, vault_key) = self.unwrap_with_password(password)?;
         let code = RecoveryCode::generate()?;
-        let recovery_vault_key_json = wrap_key(&code.recovery_key(), AAD_RECOVERY_VAULT_KEY, &vault_key)?;
+        let recovery_vault_key_json =
+            wrap_key(&code.recovery_key(), AAD_RECOVERY_VAULT_KEY, &vault_key)?;
         let recovery_auth = code.recovery_auth();
         let sealed_auth = seal_recovery_auth(&vault_key, &recovery_auth)?;
         Ok(StagedRecovery {
             code,
-            change: RecoveryChange { recovery_vault_key_json, recovery_auth },
+            change: RecoveryChange {
+                recovery_vault_key_json,
+                recovery_auth,
+            },
             sealed_auth,
             auth_key: keys.auth_key,
         })
@@ -656,7 +716,10 @@ impl Vault {
     /// Writes a staged recovery rotation.
     pub(crate) fn commit_recovery_rotation(&mut self, staged: &StagedRecovery) -> Result<()> {
         self.store.transaction(|tx| {
-            tx.set_meta(meta::RECOVERY_VAULT_KEY, &staged.change.recovery_vault_key_json)?;
+            tx.set_meta(
+                meta::RECOVERY_VAULT_KEY,
+                &staged.change.recovery_vault_key_json,
+            )?;
             tx.set_meta(meta::RECOVERY_AUTH_SEALED, &staged.sealed_auth)
         })
     }
@@ -675,7 +738,9 @@ impl Vault {
 
     /// All live items as `(id, item)`, in id (≈ creation) order. Empty while locked.
     pub fn items(&self) -> impl Iterator<Item = (&str, &Item)> {
-        self.unlocked.iter().flat_map(|u| u.items.iter().map(|(id, item)| (id.as_str(), item)))
+        self.unlocked
+            .iter()
+            .flat_map(|u| u.items.iter().map(|(id, item)| (id.as_str(), item)))
     }
 
     /// One item. `None` if missing, deleted or locked.
@@ -700,13 +765,17 @@ impl Vault {
             return Err(Error::InvalidItem("malformed id".into()));
         }
         if matches!(item, Item::Settings(_)) != (id == SETTINGS_ID) {
-            return Err(Error::InvalidItem("the settings item must use the fixed settings id".into()));
+            return Err(Error::InvalidItem(
+                "the settings item must use the fixed settings id".into(),
+            ));
         }
         let previous = self.store.item_row(&id)?;
         let now = self.clock.now_ms();
         let unlocked = self.unlocked.as_mut().ok_or(Error::Locked)?;
 
-        let updated_at = previous.as_ref().map_or(now, |p| now.max(p.updated_at.saturating_add(1)));
+        let updated_at = previous
+            .as_ref()
+            .map_or(now, |p| now.max(p.updated_at.saturating_add(1)));
         item.set_updated_at(updated_at);
         let envelope = seal_item(&unlocked.vault_key, &id, &item)?;
         self.store.upsert_item_row(&ItemRow {
@@ -727,11 +796,17 @@ impl Vault {
     /// [`Error::Locked`]; [`Error::ItemNotFound`]; [`Error::InvalidItem`] for the settings item.
     pub fn delete(&mut self, id: &str) -> Result<()> {
         if id == SETTINGS_ID {
-            return Err(Error::InvalidItem("the settings item cannot be deleted".into()));
+            return Err(Error::InvalidItem(
+                "the settings item cannot be deleted".into(),
+            ));
         }
         let now = self.clock.now_ms();
         let unlocked = self.unlocked.as_mut().ok_or(Error::Locked)?;
-        let row = self.store.item_row(id)?.filter(|r| !r.deleted).ok_or_else(|| Error::ItemNotFound(id.to_owned()))?;
+        let row = self
+            .store
+            .item_row(id)?
+            .filter(|r| !r.deleted)
+            .ok_or_else(|| Error::ItemNotFound(id.to_owned()))?;
         self.store.upsert_item_row(&ItemRow {
             id: id.to_owned(),
             envelope: None,
@@ -748,7 +823,9 @@ impl Vault {
     where
         T: Clone,
     {
-        self.items().filter_map(|(id, item)| pick(item).map(|t| (id.to_owned(), t.clone()))).collect()
+        self.items()
+            .filter_map(|(id, item)| pick(item).map(|t| (id.to_owned(), t.clone())))
+            .collect()
     }
 
     /// All hosts.
@@ -784,7 +861,10 @@ impl Vault {
     /// The settings (defaults while locked or if none is stored yet).
     #[must_use]
     pub fn settings(&self) -> Settings {
-        self.get(SETTINGS_ID).and_then(Item::as_settings).cloned().unwrap_or_default()
+        self.get(SETTINGS_ID)
+            .and_then(Item::as_settings)
+            .cloned()
+            .unwrap_or_default()
     }
 
     // ---- device-local data ----
@@ -838,7 +918,9 @@ impl Vault {
     /// Storage errors; [`Error::Format`] if the stored value is unreadable.
     pub fn sync_config(&self) -> Result<Option<SyncConfig>> {
         match self.store.get_meta(meta::SYNC_BACKEND)? {
-            Some(json) => Ok(Some(serde_json::from_str(&json).map_err(|_| Error::Format("sync_backend".into()))?)),
+            Some(json) => Ok(Some(
+                serde_json::from_str(&json).map_err(|_| Error::Format("sync_backend".into()))?,
+            )),
             None => Ok(None),
         }
     }
@@ -849,7 +931,9 @@ impl Vault {
     /// Storage errors.
     pub fn set_sync_config(&mut self, config: Option<&SyncConfig>) -> Result<()> {
         match config {
-            Some(c) => self.store.set_meta(meta::SYNC_BACKEND, &serde_json::to_string(c)?),
+            Some(c) => self
+                .store
+                .set_meta(meta::SYNC_BACKEND, &serde_json::to_string(c)?),
             None => self.store.transaction(|tx| {
                 tx.delete_meta(meta::SYNC_BACKEND)?;
                 tx.delete_meta(meta::SYNC_CURSOR)?;
@@ -861,7 +945,12 @@ impl Vault {
     /// Highest server sequence number pulled so far.
     #[must_use]
     pub fn sync_cursor(&self) -> u64 {
-        let n = self.store.get_meta_i64(meta::SYNC_CURSOR).ok().flatten().unwrap_or(0);
+        let n = self
+            .store
+            .get_meta_i64(meta::SYNC_CURSOR)
+            .ok()
+            .flatten()
+            .unwrap_or(0);
         u64::try_from(n).unwrap_or(0)
     }
 
@@ -884,7 +973,10 @@ impl Vault {
     pub fn local_meta(&self) -> Result<LocalMeta> {
         let get = |key: &str| self.store.get_meta(key)?.ok_or(Error::VaultNotInitialized);
         Ok(LocalMeta {
-            schema_version: u32::try_from(self.store.get_meta_i64(meta::SCHEMA_VERSION)?.unwrap_or(1)).unwrap_or(1),
+            schema_version: u32::try_from(
+                self.store.get_meta_i64(meta::SCHEMA_VERSION)?.unwrap_or(1),
+            )
+            .unwrap_or(1),
             kdf_salt: get(meta::KDF_SALT)?,
             kdf_params: get(meta::KDF_PARAMS)?,
             protected_vault_key: get(meta::PROTECTED_VAULT_KEY)?,
@@ -901,7 +993,10 @@ impl Vault {
     #[cfg(test)]
     pub(crate) fn recovery_auth(&self) -> Result<Key32> {
         let unlocked = self.unlocked.as_ref().ok_or(Error::Locked)?;
-        let sealed = self.store.get_meta(meta::RECOVERY_AUTH_SEALED)?.ok_or(Error::RecoveryMaterialMissing)?;
+        let sealed = self
+            .store
+            .get_meta(meta::RECOVERY_AUTH_SEALED)?
+            .ok_or(Error::RecoveryMaterialMissing)?;
         unwrap_key(&unlocked.vault_key, AAD_RECOVERY_AUTH, &sealed)
     }
 
@@ -909,7 +1004,10 @@ impl Vault {
     /// `recovery_auth` that was sealed under the vault key at creation.
     pub(crate) fn sync_setup_material(&self, password: &str) -> Result<SetupMaterial> {
         let (keys, vault_key) = self.unwrap_with_password(password)?;
-        let sealed = self.store.get_meta(meta::RECOVERY_AUTH_SEALED)?.ok_or(Error::RecoveryMaterialMissing)?;
+        let sealed = self
+            .store
+            .get_meta(meta::RECOVERY_AUTH_SEALED)?
+            .ok_or(Error::RecoveryMaterialMissing)?;
         let recovery_auth = unwrap_key(&vault_key, AAD_RECOVERY_AUTH, &sealed)?;
         Ok(SetupMaterial {
             meta: self.local_meta()?,
@@ -923,20 +1021,37 @@ impl Vault {
     /// Splits the vault into the pieces the sync engine needs.
     pub(crate) fn sync_ctx(&mut self) -> Result<SyncCtx<'_>> {
         let now = self.clock.now_ms();
-        let Self { store, unlocked, .. } = self;
+        let Self {
+            store, unlocked, ..
+        } = self;
         let unlocked = unlocked.as_mut().ok_or(Error::Locked)?;
-        Ok(SyncCtx { store, key: &unlocked.vault_key, items: &mut unlocked.items, now })
+        Ok(SyncCtx {
+            store,
+            key: &unlocked.vault_key,
+            items: &mut unlocked.items,
+            now,
+        })
     }
 
     /// Installs the metadata of a remote vault into an empty local database and unlocks with
     /// the already-unwrapped vault key (flow B). Existing items are not touched.
-    pub(crate) fn install_remote_vault(&mut self, remote: &VaultMeta, vault_key: Key32, device_id: &str) -> Result<()> {
+    pub(crate) fn install_remote_vault(
+        &mut self,
+        remote: &VaultMeta,
+        vault_key: Key32,
+        device_id: &str,
+    ) -> Result<()> {
         if self.is_initialized() {
             return Err(Error::VaultAlreadyInitialized);
         }
         let check = seal_vault_check(&vault_key)?;
         self.store.transaction(|tx| {
-            tx.set_meta(meta::SCHEMA_VERSION, &crate::store::SCHEMA_VERSION.max(remote.schema_version).to_string())?;
+            tx.set_meta(
+                meta::SCHEMA_VERSION,
+                &crate::store::SCHEMA_VERSION
+                    .max(remote.schema_version)
+                    .to_string(),
+            )?;
             tx.set_meta(meta::KDF_SALT, &remote.kdf_salt)?;
             tx.set_meta(meta::KDF_PARAMS, &remote.kdf_params)?;
             tx.set_meta(meta::PROTECTED_VAULT_KEY, &remote.protected_vault_key)?;
@@ -971,12 +1086,15 @@ impl Vault {
         let unlocked = self.unlocked.as_ref().ok_or(Error::Locked)?;
         let decode = |envelope: &Option<String>, item_id: &str| -> Option<Item> {
             let env = envelope.as_deref()?;
-            let plain = crypto::open_json(&unlocked.vault_key, item_aad(item_id).as_bytes(), env).ok()?;
+            let plain =
+                crypto::open_json(&unlocked.vault_key, item_aad(item_id).as_bytes(), env).ok()?;
             Item::from_plaintext(&plain).ok()
         };
         let mut out = Vec::new();
         for row in self.store.conflicts(unreviewed_only)? {
-            let Some(resolution) = Resolution::parse(&row.resolution) else { continue };
+            let Some(resolution) = Resolution::parse(&row.resolution) else {
+                continue;
+            };
             out.push(ConflictEntry {
                 id: row.id,
                 local: decode(&row.local_envelope, &row.item_id),
@@ -1017,9 +1135,15 @@ impl Vault {
     /// if the losing version can no longer be read.
     pub fn restore_conflict_loser(&mut self, id: i64) -> Result<String> {
         let entries = self.conflicts(false)?;
-        let entry = entries.into_iter().find(|e| e.id == id).ok_or_else(|| Error::ItemNotFound(format!("conflict {id}")))?;
-        let (loser, loser_deleted) =
-            if entry.resolution.local_won() { (entry.remote, entry.remote_deleted) } else { (entry.local, entry.local_deleted) };
+        let entry = entries
+            .into_iter()
+            .find(|e| e.id == id)
+            .ok_or_else(|| Error::ItemNotFound(format!("conflict {id}")))?;
+        let (loser, loser_deleted) = if entry.resolution.local_won() {
+            (entry.remote, entry.remote_deleted)
+        } else {
+            (entry.local, entry.local_deleted)
+        };
         if loser_deleted {
             // The losing side was a deletion: restoring it means deleting again.
             if self.get(&entry.item_id).is_some() {
@@ -1064,7 +1188,8 @@ pub(crate) fn seal_vault_check(vault_key: &[u8; 32]) -> Result<String> {
 }
 
 fn open_vault_check(vault_key: &[u8; 32], json: &str) -> bool {
-    crypto::open_json(vault_key, AAD_VAULT_CHECK.as_bytes(), json).is_ok_and(|p| p.as_slice() == VAULT_CHECK_PLAINTEXT)
+    crypto::open_json(vault_key, AAD_VAULT_CHECK.as_bytes(), json)
+        .is_ok_and(|p| p.as_slice() == VAULT_CHECK_PLAINTEXT)
 }
 
 #[cfg(test)]
@@ -1082,12 +1207,18 @@ mod tests {
 
     fn created() -> (Vault, Arc<ManualClock>, RecoveryCode) {
         let (mut vault, clock) = test_vault();
-        let code = vault.create_with_params(PW, KdfParams::for_tests()).unwrap();
+        let code = vault
+            .create_with_params(PW, KdfParams::for_tests())
+            .unwrap();
         (vault, clock, code)
     }
 
     fn host(name: &str) -> Item {
-        Item::Host(Host { name: name.into(), address: format!("{name}.example.org"), ..Host::default() })
+        Item::Host(Host {
+            name: name.into(),
+            address: format!("{name}.example.org"),
+            ..Host::default()
+        })
     }
 
     #[test]
@@ -1095,10 +1226,21 @@ mod tests {
         let (mut vault, _clock, _code) = created();
         assert!(vault.is_unlocked());
         let status = vault.status();
-        assert!(status.initialized && status.unlocked && status.failed_attempts == 0 && status.retry_at.is_none());
+        assert!(
+            status.initialized
+                && status.unlocked
+                && status.failed_attempts == 0
+                && status.retry_at.is_none()
+        );
         assert!(!vault.device_id().is_empty());
         // The default settings item exists.
-        assert_eq!(vault.settings(), Settings { updated_at: 1_000_000, ..Settings::default() });
+        assert_eq!(
+            vault.settings(),
+            Settings {
+                updated_at: 1_000_000,
+                ..Settings::default()
+            }
+        );
         assert_eq!(vault.items().count(), 1);
 
         let id = vault.put(None, host("alpha")).unwrap();
@@ -1118,9 +1260,15 @@ mod tests {
     #[test]
     fn create_twice_is_refused_and_empty_password_rejected() {
         let (mut vault, _clock, _code) = created();
-        assert!(matches!(vault.create_with_params(PW, KdfParams::for_tests()), Err(Error::VaultAlreadyInitialized)));
+        assert!(matches!(
+            vault.create_with_params(PW, KdfParams::for_tests()),
+            Err(Error::VaultAlreadyInitialized)
+        ));
         let (mut fresh, _c) = test_vault();
-        assert!(matches!(fresh.create_with_params("", KdfParams::for_tests()), Err(Error::EmptyPassword)));
+        assert!(matches!(
+            fresh.create_with_params("", KdfParams::for_tests()),
+            Err(Error::EmptyPassword)
+        ));
         assert!(!fresh.status().initialized);
         assert!(matches!(fresh.unlock(PW), Err(Error::VaultNotInitialized)));
     }
@@ -1152,7 +1300,12 @@ mod tests {
     #[test]
     fn throttle_delay_schedule() {
         let secs: Vec<i64> = (0..=16).map(|n| unlock_delay_ms(n) / 1000).collect();
-        assert_eq!(secs, [0, 0, 0, 0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300, 300]);
+        assert_eq!(
+            secs,
+            [
+                0, 0, 0, 0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300, 300
+            ]
+        );
         assert_eq!(unlock_delay_ms(u32::MAX), 300_000);
     }
 
@@ -1172,9 +1325,17 @@ mod tests {
 
         // While throttled even the right password is refused, and the counter does not move.
         clock.advance(999);
-        assert!(matches!(vault.unlock(PW), Err(Error::Throttled { retry_at }) if retry_at == t0 + 1000));
-        assert!(matches!(vault.verify_password(PW), Err(Error::Throttled { .. })));
-        assert!(matches!(vault.change_password(PW, "x"), Err(Error::Throttled { .. })));
+        assert!(
+            matches!(vault.unlock(PW), Err(Error::Throttled { retry_at }) if retry_at == t0 + 1000)
+        );
+        assert!(matches!(
+            vault.verify_password(PW),
+            Err(Error::Throttled { .. })
+        ));
+        assert!(matches!(
+            vault.change_password(PW, "x"),
+            Err(Error::Throttled { .. })
+        ));
         assert_eq!(vault.status().failed_attempts, 4);
 
         // Delay over: attempts are allowed again; 5th failure doubles the delay.
@@ -1213,7 +1374,9 @@ mod tests {
         let clock = Arc::new(ManualClock::new(5_000_000));
         {
             let mut vault = Vault::open(&path).unwrap().with_clock(clock.clone());
-            vault.create_with_params(PW, KdfParams::for_tests()).unwrap();
+            vault
+                .create_with_params(PW, KdfParams::for_tests())
+                .unwrap();
             vault.lock();
             for _ in 0..4 {
                 let _ = vault.unlock("bad");
@@ -1235,7 +1398,10 @@ mod tests {
         assert!(vault.verify_password(PW).unwrap());
         assert!(!vault.verify_password("bad").unwrap());
         assert_eq!(vault.status().failed_attempts, 1);
-        assert!(matches!(vault.master_keys("bad"), Err(Error::WrongPassword)));
+        assert!(matches!(
+            vault.master_keys("bad"),
+            Err(Error::WrongPassword)
+        ));
         assert_eq!(vault.status().failed_attempts, 2);
         let keys = vault.master_keys(PW).unwrap();
         assert_eq!(vault.status().failed_attempts, 0);
@@ -1249,10 +1415,43 @@ mod tests {
         let (mut vault, clock, _code) = created();
         clock.advance(10);
         let h = vault.put(None, host("web")).unwrap();
-        let g = vault.put(None, Item::Group(Group { name: "prod".into(), ..Group::default() })).unwrap();
-        let k = vault.put(None, Item::Key(SshKey { name: "laptop".into(), ..SshKey::default() })).unwrap();
-        vault.put(None, Item::KnownHost(KnownHost { host: "web".into(), port: 22, ..KnownHost::default() })).unwrap();
-        vault.put(None, Item::Forward(PortForward { host_id: h.clone(), ..PortForward::default() })).unwrap();
+        let g = vault
+            .put(
+                None,
+                Item::Group(Group {
+                    name: "prod".into(),
+                    ..Group::default()
+                }),
+            )
+            .unwrap();
+        let k = vault
+            .put(
+                None,
+                Item::Key(SshKey {
+                    name: "laptop".into(),
+                    ..SshKey::default()
+                }),
+            )
+            .unwrap();
+        vault
+            .put(
+                None,
+                Item::KnownHost(KnownHost {
+                    host: "web".into(),
+                    port: 22,
+                    ..KnownHost::default()
+                }),
+            )
+            .unwrap();
+        vault
+            .put(
+                None,
+                Item::Forward(PortForward {
+                    host_id: h.clone(),
+                    ..PortForward::default()
+                }),
+            )
+            .unwrap();
 
         assert_eq!(vault.hosts().len(), 1);
         assert_eq!(vault.groups()[0].0, g);
@@ -1278,8 +1477,14 @@ mod tests {
         let row = vault.store.item_row(&h).unwrap().unwrap();
         assert!(row.deleted && row.envelope.is_none() && row.dirty);
         assert!(matches!(vault.delete(&h), Err(Error::ItemNotFound(_))));
-        assert!(matches!(vault.delete("missing"), Err(Error::ItemNotFound(_))));
-        assert!(matches!(vault.delete(SETTINGS_ID), Err(Error::InvalidItem(_))));
+        assert!(matches!(
+            vault.delete("missing"),
+            Err(Error::ItemNotFound(_))
+        ));
+        assert!(matches!(
+            vault.delete(SETTINGS_ID),
+            Err(Error::InvalidItem(_))
+        ));
     }
 
     #[test]
@@ -1299,9 +1504,18 @@ mod tests {
     #[test]
     fn settings_have_a_fixed_id() {
         let (mut vault, _clock, _code) = created();
-        assert!(matches!(vault.put(Some("other"), Item::Settings(Settings::default())), Err(Error::InvalidItem(_))));
-        assert!(matches!(vault.put(Some(SETTINGS_ID), host("h")), Err(Error::InvalidItem(_))));
-        assert!(matches!(vault.put(Some("bad id!"), host("h")), Err(Error::InvalidItem(_))));
+        assert!(matches!(
+            vault.put(Some("other"), Item::Settings(Settings::default())),
+            Err(Error::InvalidItem(_))
+        ));
+        assert!(matches!(
+            vault.put(Some(SETTINGS_ID), host("h")),
+            Err(Error::InvalidItem(_))
+        ));
+        assert!(matches!(
+            vault.put(Some("bad id!"), host("h")),
+            Err(Error::InvalidItem(_))
+        ));
         let mut s = vault.settings();
         s.auto_lock_minutes = 5;
         assert_eq!(vault.put(None, Item::Settings(s)).unwrap(), SETTINGS_ID);
@@ -1317,21 +1531,39 @@ mod tests {
 
         let change = vault.change_password(PW, "a brand new password").unwrap();
         assert_ne!(vault.store.get_meta(meta::KDF_SALT).unwrap(), salt_before);
-        assert_eq!(change.kdf_salt_b64, vault.store.get_meta(meta::KDF_SALT).unwrap().unwrap());
+        assert_eq!(
+            change.kdf_salt_b64,
+            vault.store.get_meta(meta::KDF_SALT).unwrap().unwrap()
+        );
         // No item was re-encrypted.
-        assert_eq!(vault.store.item_row(&id).unwrap().unwrap().envelope, envelope_before);
-        assert!(vault.is_unlocked(), "changing the password does not change the lock state");
+        assert_eq!(
+            vault.store.item_row(&id).unwrap().unwrap().envelope,
+            envelope_before
+        );
+        assert!(
+            vault.is_unlocked(),
+            "changing the password does not change the lock state"
+        );
 
         vault.lock();
-        assert!(matches!(vault.unlock(PW), Err(Error::WrongPassword)), "old password must stop working");
+        assert!(
+            matches!(vault.unlock(PW), Err(Error::WrongPassword)),
+            "old password must stop working"
+        );
         vault.unlock("a brand new password").unwrap();
         assert_eq!(vault.get(&id).unwrap().display_name(), "kept");
 
         // The returned auth_key is what the new password derives.
         let keys = vault.master_keys("a brand new password").unwrap();
         assert_eq!(*keys.auth_key, *change.auth_key);
-        assert!(matches!(vault.change_password("wrong", "x"), Err(Error::WrongPassword)));
-        assert!(matches!(vault.change_password("a brand new password", ""), Err(Error::EmptyPassword)));
+        assert!(matches!(
+            vault.change_password("wrong", "x"),
+            Err(Error::WrongPassword)
+        ));
+        assert!(matches!(
+            vault.change_password("a brand new password", ""),
+            Err(Error::EmptyPassword)
+        ));
     }
 
     #[test]
@@ -1355,8 +1587,14 @@ mod tests {
 
         // A wrong or malformed code changes nothing.
         let other = RecoveryCode::generate().unwrap();
-        assert!(matches!(vault.recover(&other.to_string(), "new-pw"), Err(Error::WrongRecoveryCode)));
-        assert!(matches!(vault.recover("not a code", "new-pw"), Err(Error::WrongRecoveryCode)));
+        assert!(matches!(
+            vault.recover(&other.to_string(), "new-pw"),
+            Err(Error::WrongRecoveryCode)
+        ));
+        assert!(matches!(
+            vault.recover("not a code", "new-pw"),
+            Err(Error::WrongRecoveryCode)
+        ));
         assert!(!vault.is_unlocked());
 
         // Case/format-insensitive code works even while throttled, and unlocks the vault.
@@ -1366,7 +1604,10 @@ mod tests {
         assert_eq!(vault.get(&id).unwrap().display_name(), "survivor");
         let status = vault.status();
         assert_eq!((status.failed_attempts, status.retry_at), (0, None));
-        assert_eq!(*change.auth_key, *vault.master_keys("new-pw").unwrap().auth_key);
+        assert_eq!(
+            *change.auth_key,
+            *vault.master_keys("new-pw").unwrap().auth_key
+        );
 
         clock.advance(1);
         vault.lock();
@@ -1379,11 +1620,17 @@ mod tests {
     #[test]
     fn rotate_recovery_replaces_the_code() {
         let (mut vault, _clock, old_code) = created();
-        assert!(matches!(vault.rotate_recovery("bad"), Err(Error::WrongPassword)));
+        assert!(matches!(
+            vault.rotate_recovery("bad"),
+            Err(Error::WrongPassword)
+        ));
         let (new_code, change) = vault.rotate_recovery(PW).unwrap();
         assert_ne!(new_code, old_code);
         assert_eq!(*change.recovery_auth, *new_code.recovery_auth());
-        assert!(matches!(vault.recover(&old_code.to_string(), "x"), Err(Error::WrongRecoveryCode)));
+        assert!(matches!(
+            vault.recover(&old_code.to_string(), "x"),
+            Err(Error::WrongRecoveryCode)
+        ));
         vault.recover(&new_code.to_string(), "x").unwrap();
         // The sealed recovery_auth follows the rotation (sync setup relies on it).
         assert_eq!(*vault.recovery_auth().unwrap(), *new_code.recovery_auth());
@@ -1393,7 +1640,11 @@ mod tests {
     fn recovery_auth_is_kept_sealed_for_sync_setup() {
         let (mut vault, _clock, code) = created();
         assert_eq!(*vault.recovery_auth().unwrap(), *code.recovery_auth());
-        let sealed = vault.store.get_meta(meta::RECOVERY_AUTH_SEALED).unwrap().unwrap();
+        let sealed = vault
+            .store
+            .get_meta(meta::RECOVERY_AUTH_SEALED)
+            .unwrap()
+            .unwrap();
         assert!(!sealed.contains(&crypto::hex_encode(&*code.recovery_auth())));
         vault.lock();
         assert!(matches!(vault.recovery_auth(), Err(Error::Locked)));
@@ -1405,7 +1656,10 @@ mod tests {
         let id = vault.put(None, host("bio")).unwrap();
         let key = vault.vault_key_copy().unwrap();
         vault.lock();
-        assert!(matches!(vault.unlock_with_vault_key(random_key().unwrap()), Err(Error::WrongVaultKey)));
+        assert!(matches!(
+            vault.unlock_with_vault_key(random_key().unwrap()),
+            Err(Error::WrongVaultKey)
+        ));
         assert!(!vault.is_unlocked());
         vault.unlock_with_vault_key(key).unwrap();
         assert!(vault.get(&id).is_some());
@@ -1414,14 +1668,25 @@ mod tests {
     #[test]
     fn lock_wipes_decrypted_state() {
         let (mut vault, _clock, _code) = created();
-        vault.put(None, Item::Key(SshKey { private_key: Zeroizing::new("SECRET".into()), ..SshKey::default() })).unwrap();
+        vault
+            .put(
+                None,
+                Item::Key(SshKey {
+                    private_key: Zeroizing::new("SECRET".into()),
+                    ..SshKey::default()
+                }),
+            )
+            .unwrap();
         assert!(vault.unlocked.as_ref().is_some_and(|u| !u.items.is_empty()));
         vault.lock();
         assert!(vault.unlocked.is_none(), "key and item map are dropped");
         assert_eq!(vault.items().count(), 0);
         assert_eq!(vault.hosts().len() + vault.keys().len(), 0);
         assert_eq!(vault.settings(), Settings::default());
-        assert!(matches!(vault.unlock_with_vault_key(random_key().unwrap()), Err(Error::WrongVaultKey)));
+        assert!(matches!(
+            vault.unlock_with_vault_key(random_key().unwrap()),
+            Err(Error::WrongVaultKey)
+        ));
     }
 
     #[test]
@@ -1432,7 +1697,10 @@ mod tests {
             .store
             .upsert_item_row(&ItemRow {
                 id: "garbage".into(),
-                envelope: Some(r#"{"v":1,"n":"AAAAAAAAAAAAAAAA","c":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#.into()),
+                envelope: Some(
+                    r#"{"v":1,"n":"AAAAAAAAAAAAAAAA","c":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
+                        .into(),
+                ),
                 revision: 1,
                 deleted: false,
                 dirty: false,
@@ -1454,7 +1722,10 @@ mod tests {
         assert_eq!(vault.last_connected(&id), Some(123));
         assert_eq!(vault.local_prefs().unwrap(), None);
         vault.set_local_prefs(r#"{"window":{"w":1200}}"#).unwrap();
-        assert_eq!(vault.local_prefs().unwrap().as_deref(), Some(r#"{"window":{"w":1200}}"#));
+        assert_eq!(
+            vault.local_prefs().unwrap().as_deref(),
+            Some(r#"{"window":{"w":1200}}"#)
+        );
         // last_connected is not an item and never dirties anything.
         assert_eq!(vault.pending_count(), 2);
     }
@@ -1463,7 +1734,9 @@ mod tests {
     fn sync_config_round_trip() {
         let (mut vault, _clock, _code) = created();
         assert_eq!(vault.sync_config().unwrap(), None);
-        let cfg = SyncConfig::Worker { url: "https://sync.example.workers.dev".into() };
+        let cfg = SyncConfig::Worker {
+            url: "https://sync.example.workers.dev".into(),
+        };
         vault.set_sync_config(Some(&cfg)).unwrap();
         vault.store.set_meta(meta::SYNC_CURSOR, "42").unwrap();
         assert_eq!(vault.sync_config().unwrap(), Some(cfg));
@@ -1485,7 +1758,9 @@ mod tests {
         let host_password = "ssh-login-password-xyz";
 
         let mut vault = Vault::open(&path).unwrap();
-        vault.create_with_params(password, KdfParams::for_tests()).unwrap();
+        vault
+            .create_with_params(password, KdfParams::for_tests())
+            .unwrap();
         vault
             .put(
                 None,
@@ -1528,7 +1803,10 @@ mod tests {
             }
         }
         assert!(blobs.iter().any(|(n, b)| *n == "vault.db" && !b.is_empty()));
-        assert!(wal_seen_before_close, "test must actually exercise the WAL file");
+        assert!(
+            wal_seen_before_close,
+            "test must actually exercise the WAL file"
+        );
 
         let needles = [
             password,

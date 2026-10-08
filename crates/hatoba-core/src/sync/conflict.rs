@@ -34,13 +34,21 @@ impl<'a> Side<'a> {
     /// A live item.
     #[must_use]
     pub fn live(item: &'a Item) -> Self {
-        Self { deleted: false, item: Some(item), updated_at: item.updated_at() }
+        Self {
+            deleted: false,
+            item: Some(item),
+            updated_at: item.updated_at(),
+        }
     }
 
     /// A tombstone with the time it was written.
     #[must_use]
     pub fn tombstone(updated_at: i64) -> Self {
-        Self { deleted: true, item: None, updated_at }
+        Self {
+            deleted: true,
+            item: None,
+            updated_at,
+        }
     }
 }
 
@@ -136,9 +144,13 @@ pub fn decide(local: &Side<'_>, remote: &Side<'_>) -> Decision {
             let preserve_loser = l.is_key() || r.is_key();
             // Last writer wins; a tie goes to the remote so every device picks the same winner.
             if local.updated_at > remote.updated_at {
-                Decision::KeepLocal { copy_remote: preserve_loser }
+                Decision::KeepLocal {
+                    copy_remote: preserve_loser,
+                }
             } else {
-                Decision::KeepRemote { copy_local: preserve_loser }
+                Decision::KeepRemote {
+                    copy_local: preserve_loser,
+                }
             }
         }
     }
@@ -186,58 +198,100 @@ mod tests {
     use crate::model::{Group, Host, SshKey};
 
     fn host(name: &str, at: i64) -> Item {
-        Item::Host(Host { name: name.into(), updated_at: at, ..Host::default() })
+        Item::Host(Host {
+            name: name.into(),
+            updated_at: at,
+            ..Host::default()
+        })
     }
 
     fn key(name: &str, at: i64) -> Item {
-        Item::Key(SshKey { name: name.into(), updated_at: at, ..SshKey::default() })
+        Item::Key(SshKey {
+            name: name.into(),
+            updated_at: at,
+            ..SshKey::default()
+        })
     }
 
     #[test]
     fn newer_local_wins() {
         let (l, r) = (host("l", 20), host("r", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepLocal { copy_remote: false });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepLocal { copy_remote: false }
+        );
     }
 
     #[test]
     fn newer_remote_wins() {
         let (l, r) = (host("l", 10), host("r", 20));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepRemote { copy_local: false });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepRemote { copy_local: false }
+        );
     }
 
     #[test]
     fn tie_goes_to_remote() {
         let (l, r) = (host("l", 10), host("r", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepRemote { copy_local: false });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepRemote { copy_local: false }
+        );
     }
 
     #[test]
     fn identical_content_converges() {
         let (l, r) = (host("same", 10), host("same", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::Converged);
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::Converged
+        );
     }
 
     #[test]
     fn same_name_different_timestamp_is_still_a_conflict() {
         let (l, r) = (host("same", 11), host("same", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepLocal { copy_remote: false });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepLocal { copy_remote: false }
+        );
     }
 
     #[test]
     fn keys_preserve_the_loser_whichever_side_loses() {
         let (l, r) = (key("l", 20), key("r", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepLocal { copy_remote: true });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepLocal { copy_remote: true }
+        );
         let (l, r) = (key("l", 10), key("r", 20));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepRemote { copy_local: true });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepRemote { copy_local: true }
+        );
         let (l, r) = (key("l", 10), key("r", 10));
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepRemote { copy_local: true });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepRemote { copy_local: true }
+        );
     }
 
     #[test]
     fn non_key_items_never_produce_copies() {
-        let (l, r) = (Item::Group(Group { name: "a".into(), updated_at: 5, ..Group::default() }), host("h", 1));
+        let (l, r) = (
+            Item::Group(Group {
+                name: "a".into(),
+                updated_at: 5,
+                ..Group::default()
+            }),
+            host("h", 1),
+        );
         // Mixed types should not happen, but still resolves by LWW without panicking.
-        assert_eq!(decide(&Side::live(&l), &Side::live(&r)), Decision::KeepLocal { copy_remote: false });
+        assert_eq!(
+            decide(&Side::live(&l), &Side::live(&r)),
+            Decision::KeepLocal { copy_remote: false }
+        );
     }
 
     #[test]
@@ -254,22 +308,43 @@ mod tests {
         );
         // Keys too: a deletion never destroys a modified key, and no copy is needed.
         let k = key("k", 5);
-        assert_eq!(decide(&Side::tombstone(9), &Side::live(&k)), Decision::KeepRemote { copy_local: false });
-        assert_eq!(decide(&Side::live(&k), &Side::tombstone(9)), Decision::KeepLocal { copy_remote: false });
+        assert_eq!(
+            decide(&Side::tombstone(9), &Side::live(&k)),
+            Decision::KeepRemote { copy_local: false }
+        );
+        assert_eq!(
+            decide(&Side::live(&k), &Side::tombstone(9)),
+            Decision::KeepLocal { copy_remote: false }
+        );
     }
 
     #[test]
     fn delete_vs_delete_converges() {
-        assert_eq!(decide(&Side::tombstone(1), &Side::tombstone(2)), Decision::Converged);
+        assert_eq!(
+            decide(&Side::tombstone(1), &Side::tombstone(2)),
+            Decision::Converged
+        );
     }
 
     #[test]
     fn resolution_mapping() {
         assert_eq!(Decision::Converged.resolution(), None);
-        assert_eq!(Decision::KeepLocal { copy_remote: false }.resolution(), Some(Resolution::LocalWins));
-        assert_eq!(Decision::KeepLocal { copy_remote: true }.resolution(), Some(Resolution::LocalWinsRemoteCopied));
-        assert_eq!(Decision::KeepRemote { copy_local: false }.resolution(), Some(Resolution::RemoteWins));
-        assert_eq!(Decision::KeepRemote { copy_local: true }.resolution(), Some(Resolution::RemoteWinsLocalCopied));
+        assert_eq!(
+            Decision::KeepLocal { copy_remote: false }.resolution(),
+            Some(Resolution::LocalWins)
+        );
+        assert_eq!(
+            Decision::KeepLocal { copy_remote: true }.resolution(),
+            Some(Resolution::LocalWinsRemoteCopied)
+        );
+        assert_eq!(
+            Decision::KeepRemote { copy_local: false }.resolution(),
+            Some(Resolution::RemoteWins)
+        );
+        assert_eq!(
+            Decision::KeepRemote { copy_local: true }.resolution(),
+            Some(Resolution::RemoteWinsLocalCopied)
+        );
     }
 
     #[test]
@@ -294,10 +369,15 @@ mod tests {
         assert_eq!(copy.display_name(), "deploy key (conflict copy)");
         assert_eq!(copy.updated_at(), 99);
         // Content other than the name and timestamp is untouched.
-        let (Item::Key(a), Item::Key(b)) = (&loser, &copy) else { panic!("keys") };
+        let (Item::Key(a), Item::Key(b)) = (&loser, &copy) else {
+            panic!("keys")
+        };
         assert_eq!(a.private_key, b.private_key);
         assert_eq!(loser.updated_at(), 5);
         // Localized suffix.
-        assert_eq!(conflict_copy(&loser, "（冲突副本）", 1).display_name(), "deploy key（冲突副本）");
+        assert_eq!(
+            conflict_copy(&loser, "（冲突副本）", 1).display_name(),
+            "deploy key（冲突副本）"
+        );
     }
 }

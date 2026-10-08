@@ -6,6 +6,8 @@ import type {
   DeviceView,
   EventMap,
   FileEntry,
+  ForwardInput,
+  ForwardView,
   GroupInput,
   GroupView,
   HostInput,
@@ -95,6 +97,16 @@ export interface HatobaApi {
   ssh_test(input: HostInput): Promise<TestResult>;
   hostkey_respond(request_id: string, accept: boolean): Promise<void>;
   auth_prompt_respond(request_id: string, answers: string[] | null): Promise<void>;
+
+  // port forwarding (FWD-01/02)
+  forwards_list(host_id: string): Promise<ForwardView[]>;
+  forward_save(input: ForwardInput): Promise<ForwardView>;
+  forward_delete(id: string): Promise<void>;
+  /** Starts a saved forward on a live session; resolves to the bound local port. */
+  forward_start(session_id: string, forward_id: string): Promise<number>;
+  forward_stop(session_id: string, forward_id: string): Promise<void>;
+  /** `[forward_id, local_port]` pairs running on a session. */
+  forwards_active(session_id: string): Promise<[string, number][]>;
 
   // sftp
   sftp_home(session_id: string): Promise<string>;

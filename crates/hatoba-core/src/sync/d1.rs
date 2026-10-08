@@ -32,10 +32,12 @@ use zeroize::Zeroizing;
 use crate::crypto::auth_hash;
 use crate::error::{Error, Result};
 use crate::sync::backend::{
-    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RemoteDevice, RemoteItem, ServerInfo, Session,
-    SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
+    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RemoteDevice, RemoteItem,
+    ServerInfo, Session, SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
 };
-use crate::sync::http::{build_client, error_code, is_loopback_host, map_transport, read_body, retry_after};
+use crate::sync::http::{
+    build_client, error_code, is_loopback_host, map_transport, read_body, retry_after,
+};
 
 /// Production API base.
 pub const CLOUDFLARE_API_BASE: &str = "https://api.cloudflare.com/client/v4";
@@ -73,7 +75,9 @@ const SCHEMA: [&str; 3] = [
 const NEXT_SEQ: &str = "(SELECT COALESCE(MAX(seq), 0) + 1 FROM items)";
 
 fn valid_identifier(s: &str) -> bool {
-    (1..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    (1..=64).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 // ---- wire types -----------------------------------------------------------------------------
@@ -128,7 +132,10 @@ impl Rows {
 }
 
 fn str_of(row: &serde_json::Map<String, Value>, key: &str) -> Result<String> {
-    row.get(key).and_then(Value::as_str).map(str::to_owned).ok_or_else(|| Error::Protocol(format!("missing column {key}")))
+    row.get(key)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| Error::Protocol(format!("missing column {key}")))
 }
 
 fn opt_str_of(row: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -137,12 +144,17 @@ fn opt_str_of(row: &serde_json::Map<String, Value>, key: &str) -> Option<String>
 
 fn u64_of(row: &serde_json::Map<String, Value>, key: &str) -> Result<u64> {
     row.get(key)
-        .and_then(|v| v.as_u64().or_else(|| v.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64)))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64))
+        })
         .ok_or_else(|| Error::Protocol(format!("missing column {key}")))
 }
 
 fn i64_of(row: &serde_json::Map<String, Value>, key: &str) -> i64 {
-    row.get(key).and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))).unwrap_or(0)
+    row.get(key)
+        .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+        .unwrap_or(0)
 }
 
 fn item_from_row(row: &serde_json::Map<String, Value>) -> Result<RemoteItem> {
@@ -163,16 +175,27 @@ fn map_cf_errors(status: StatusCode, errors: &[CfError], body: &[u8], retry: Opt
         return Error::Server(NO_SUCH_TABLE.to_owned());
     }
     // 10000 = "Authentication error" (token lacks the permission or is for another account).
-    if status == StatusCode::FORBIDDEN || errors.iter().any(|e| matches!(e.code, 10000 | 9109 | 9106)) {
+    if status == StatusCode::FORBIDDEN
+        || errors.iter().any(|e| matches!(e.code, 10000 | 9109 | 9106))
+    {
         return Error::D1Permission;
     }
     match status {
         StatusCode::UNAUTHORIZED => Error::Unauthorized,
-        StatusCode::TOO_MANY_REQUESTS => Error::RateLimited { retry_after_secs: retry },
+        StatusCode::TOO_MANY_REQUESTS => Error::RateLimited {
+            retry_after_secs: retry,
+        },
         StatusCode::NOT_FOUND => Error::Server("d1 database not found".into()),
         other => {
-            let code = errors.first().map(|e| e.code.to_string()).or_else(|| error_code(body));
-            Error::Server(format!("http {}{}", other.as_u16(), code.map(|c| format!(" code {c}")).unwrap_or_default()))
+            let code = errors
+                .first()
+                .map(|e| e.code.to_string())
+                .or_else(|| error_code(body));
+            Error::Server(format!(
+                "http {}{}",
+                other.as_u16(),
+                code.map(|c| format!(" code {c}")).unwrap_or_default()
+            ))
         }
     }
 }
@@ -187,9 +210,11 @@ struct Api {
 impl Api {
     fn new(base: &str, token: &str) -> Result<Self> {
         let base = base.trim().trim_end_matches('/').to_owned();
-        let parsed = reqwest::Url::parse(&base).map_err(|_| Error::InvalidUrl("invalid API base URL".into()))?;
+        let parsed = reqwest::Url::parse(&base)
+            .map_err(|_| Error::InvalidUrl("invalid API base URL".into()))?;
         let host = parsed.host_str().unwrap_or_default();
-        let ok = parsed.scheme() == "https" || (parsed.scheme() == "http" && is_loopback_host(host));
+        let ok =
+            parsed.scheme() == "https" || (parsed.scheme() == "http" && is_loopback_host(host));
         if !ok {
             return Err(Error::InvalidUrl("API base must be https".into()));
         }
@@ -204,20 +229,40 @@ impl Api {
     }
 
     /// Sends a request and decodes Cloudflare's `{success, errors, result}` envelope.
-    async fn call<T: for<'de> Deserialize<'de>>(&self, method: Method, path: &str, body: Option<Value>) -> Result<T> {
-        let mut auth = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.token.as_str()))
-            .map_err(|_| Error::Unauthorized)?;
+    async fn call<T: for<'de> Deserialize<'de>>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<T> {
+        let mut auth =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.token.as_str()))
+                .map_err(|_| Error::Unauthorized)?;
         auth.set_sensitive(true);
-        let mut req = self.client.request(method, format!("{}{path}", self.base)).header(reqwest::header::AUTHORIZATION, auth);
+        let mut req = self
+            .client
+            .request(method, format!("{}{path}", self.base))
+            .header(reqwest::header::AUTHORIZATION, auth);
         if let Some(body) = body {
-            req = req.header(reqwest::header::CONTENT_TYPE, "application/json").body(serde_json::to_vec(&body)?);
+            req = req
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(serde_json::to_vec(&body)?);
         }
         let resp = req.send().await.map_err(|e| map_transport(&e))?;
         let (status, headers, bytes) = read_body(resp).await?;
         let envelope: Option<CfEnvelope<T>> = serde_json::from_slice(&bytes).ok();
         match envelope {
-            Some(CfEnvelope { success: true, result: Some(result), .. }) if status.is_success() => Ok(result),
-            Some(env) => Err(map_cf_errors(status, &env.errors, &bytes, retry_after(&headers))),
+            Some(CfEnvelope {
+                success: true,
+                result: Some(result),
+                ..
+            }) if status.is_success() => Ok(result),
+            Some(env) => Err(map_cf_errors(
+                status,
+                &env.errors,
+                &bytes,
+                retry_after(&headers),
+            )),
             None if status.is_success() => Err(Error::Protocol("malformed response".into())),
             None => Err(map_cf_errors(status, &[], &bytes, retry_after(&headers))),
         }
@@ -245,7 +290,12 @@ impl D1Backend {
     ///
     /// # Errors
     /// As [`new`](Self::new).
-    pub fn with_base_url(base: &str, account_id: &str, database_id: &str, api_token: &str) -> Result<Self> {
+    pub fn with_base_url(
+        base: &str,
+        account_id: &str,
+        database_id: &str,
+        api_token: &str,
+    ) -> Result<Self> {
         if !valid_identifier(account_id) || !valid_identifier(database_id) {
             return Err(Error::InvalidUrl("invalid account or database id".into()));
         }
@@ -258,26 +308,47 @@ impl D1Backend {
     }
 
     async fn query(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        let path = format!("/accounts/{}/d1/database/{}/query", self.account_id, self.database_id);
-        let statements: Vec<StatementWire> =
-            self.api.call(Method::POST, &path, Some(json!({ "sql": sql, "params": params }))).await?;
-        let stmt = statements.into_iter().next().ok_or_else(|| Error::Protocol("empty query result".into()))?;
+        let path = format!(
+            "/accounts/{}/d1/database/{}/query",
+            self.account_id, self.database_id
+        );
+        let statements: Vec<StatementWire> = self
+            .api
+            .call(
+                Method::POST,
+                &path,
+                Some(json!({ "sql": sql, "params": params })),
+            )
+            .await?;
+        let stmt = statements
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol("empty query result".into()))?;
         if !stmt.success {
             return Err(Error::Server("d1 statement failed".into()));
         }
-        Ok(Rows { rows: stmt.results, changes: stmt.meta.changes })
+        Ok(Rows {
+            rows: stmt.results,
+            changes: stmt.meta.changes,
+        })
     }
 
     /// Runs a query, treating a missing `meta` table as "no rows".
     async fn query_or_empty(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
         match self.query(sql, params).await {
-            Err(Error::Server(m)) if m == NO_SUCH_TABLE => Ok(Rows { rows: Vec::new(), changes: 0 }),
+            Err(Error::Server(m)) if m == NO_SUCH_TABLE => Ok(Rows {
+                rows: Vec::new(),
+                changes: 0,
+            }),
             other => other,
         }
     }
 
     fn dummy_session(&self) -> Session {
-        let session = Session { token: Zeroizing::new("d1-direct".to_owned()), expires_at: FAR_FUTURE_MS };
+        let session = Session {
+            token: Zeroizing::new("d1-direct".to_owned()),
+            expires_at: FAR_FUTURE_MS,
+        };
         if let Ok(mut guard) = self.session.write() {
             *guard = Some(session.clone());
         }
@@ -286,7 +357,11 @@ impl D1Backend {
 
     /// Fetches the row and checks `presented` against the hash in `column`
     /// (`auth_hash` or `recovery_auth_hash`).
-    async fn stored_hash(&self, column: &str, presented: &[u8; 32]) -> Result<serde_json::Map<String, Value>> {
+    async fn stored_hash(
+        &self,
+        column: &str,
+        presented: &[u8; 32],
+    ) -> Result<serde_json::Map<String, Value>> {
         debug_assert!(matches!(column, "auth_hash" | "recovery_auth_hash"));
         let rows = self
             .query_or_empty(
@@ -299,14 +374,24 @@ impl D1Backend {
         let presented = auth_hash(presented);
         // Constant-time comparison of the hex digests.
         if !bool::from(stored.as_bytes().ct_eq(presented.as_bytes())) {
-            return Err(if column == "auth_hash" { Error::WrongPassword } else { Error::WrongRecoveryCode });
+            return Err(if column == "auth_hash" {
+                Error::WrongPassword
+            } else {
+                Error::WrongRecoveryCode
+            });
         }
         Ok(row)
     }
 
     async fn push_one(&self, c: &Change) -> Result<PushResult> {
-        if c.envelope.as_ref().is_some_and(|e| e.len() > MAX_ENVELOPE_BYTES) {
-            return Ok(PushResult::Error { id: c.id.clone(), error: "too_large".into() });
+        if c.envelope
+            .as_ref()
+            .is_some_and(|e| e.len() > MAX_ENVELOPE_BYTES)
+        {
+            return Ok(PushResult::Error {
+                id: c.id.clone(),
+                error: "too_large".into(),
+            });
         }
         let deleted = i64::from(c.deleted);
         let applied = if c.base_revision == 0 {
@@ -329,16 +414,31 @@ impl D1Backend {
             .await?
         };
         if applied.changes > 0 {
-            let row = applied.first().ok_or_else(|| Error::Protocol("write returned no row".into()))?;
-            return Ok(PushResult::Ok { id: c.id.clone(), revision: u64_of(row, "revision")?, seq: u64_of(row, "seq")? });
+            let row = applied
+                .first()
+                .ok_or_else(|| Error::Protocol("write returned no row".into()))?;
+            return Ok(PushResult::Ok {
+                id: c.id.clone(),
+                revision: u64_of(row, "revision")?,
+                seq: u64_of(row, "seq")?,
+            });
         }
         // Zero rows changed: somebody else changed the item (or it does not exist).
         let current = self
-            .query("SELECT id, envelope, revision, seq, deleted, updated_at FROM items WHERE id = ?", vec![json!(c.id)])
+            .query(
+                "SELECT id, envelope, revision, seq, deleted, updated_at FROM items WHERE id = ?",
+                vec![json!(c.id)],
+            )
             .await?;
         match current.first() {
-            Some(row) => Ok(PushResult::Conflict { id: c.id.clone(), server: item_from_row(row)? }),
-            None => Ok(PushResult::Error { id: c.id.clone(), error: "not_found".into() }),
+            Some(row) => Ok(PushResult::Conflict {
+                id: c.id.clone(),
+                server: item_from_row(row)?,
+            }),
+            None => Ok(PushResult::Error {
+                id: c.id.clone(),
+                error: "not_found".into(),
+            }),
         }
     }
 }
@@ -411,11 +511,20 @@ pub async fn verify_token_at(base: &str, account_id: &str, token: &str) -> Resul
         Ok(w) => w,
         // Account-owned tokens are not valid on the user endpoint.
         Err(Error::Unauthorized | Error::D1Permission) => {
-            api.call(Method::GET, &format!("/accounts/{account_id}/tokens/verify"), None).await?
+            api.call(
+                Method::GET,
+                &format!("/accounts/{account_id}/tokens/verify"),
+                None,
+            )
+            .await?
         }
         Err(e) => return Err(e),
     };
-    Ok(TokenStatus { id: wire.id, status: wire.status, expires_on: wire.expires_on })
+    Ok(TokenStatus {
+        id: wire.id,
+        status: wire.status,
+        expires_on: wire.expires_on,
+    })
 }
 
 /// Lists the account's D1 databases.
@@ -430,7 +539,11 @@ pub async fn list_databases(account_id: &str, token: &str) -> Result<Vec<D1Datab
 ///
 /// # Errors
 /// As [`list_databases`].
-pub async fn list_databases_at(base: &str, account_id: &str, token: &str) -> Result<Vec<D1Database>> {
+pub async fn list_databases_at(
+    base: &str,
+    account_id: &str,
+    token: &str,
+) -> Result<Vec<D1Database>> {
     if !valid_identifier(account_id) {
         return Err(Error::InvalidUrl("invalid account id".into()));
     }
@@ -438,10 +551,18 @@ pub async fn list_databases_at(base: &str, account_id: &str, token: &str) -> Res
     let mut out = Vec::new();
     for page in 1..=20 {
         let wires: Vec<DatabaseWire> = api
-            .call(Method::GET, &format!("/accounts/{account_id}/d1/database?per_page=100&page={page}"), None)
+            .call(
+                Method::GET,
+                &format!("/accounts/{account_id}/d1/database?per_page=100&page={page}"),
+                None,
+            )
             .await?;
         let n = wires.len();
-        out.extend(wires.into_iter().map(|w| D1Database { id: w.uuid, name: w.name, region: w.primary_location_hint }));
+        out.extend(wires.into_iter().map(|w| D1Database {
+            id: w.uuid,
+            name: w.name,
+            region: w.primary_location_hint,
+        }));
         if n < 100 {
             break;
         }
@@ -454,7 +575,9 @@ pub async fn list_databases_at(base: &str, account_id: &str, token: &str) -> Res
 #[async_trait]
 impl SyncBackend for D1Backend {
     async fn health(&self) -> Result<ServerInfo> {
-        let rows = self.query_or_empty("SELECT 1 AS present FROM meta WHERE id = 1", vec![]).await?;
+        let rows = self
+            .query_or_empty("SELECT 1 AS present FROM meta WHERE id = 1", vec![])
+            .await?;
         Ok(ServerInfo {
             service: "hatoba-d1-direct".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -464,9 +587,14 @@ impl SyncBackend for D1Backend {
     }
 
     async fn prelogin(&self) -> Result<KdfInfo> {
-        let rows = self.query_or_empty("SELECT kdf_salt, kdf_params FROM meta WHERE id = 1", vec![]).await?;
+        let rows = self
+            .query_or_empty("SELECT kdf_salt, kdf_params FROM meta WHERE id = 1", vec![])
+            .await?;
         let row = rows.first().ok_or(Error::RemoteNotInitialized)?;
-        Ok(KdfInfo { kdf_salt: str_of(row, "kdf_salt")?, kdf_params: str_of(row, "kdf_params")? })
+        Ok(KdfInfo {
+            kdf_salt: str_of(row, "kdf_salt")?,
+            kdf_params: str_of(row, "kdf_params")?,
+        })
     }
 
     async fn setup(&self, init: VaultInit) -> Result<()> {
@@ -505,10 +633,15 @@ impl SyncBackend for D1Backend {
     }
 
     async fn recover(&self, recovery_auth: &[u8; 32], _device: &DeviceLogin) -> Result<Recovered> {
-        let row = self.stored_hash("recovery_auth_hash", recovery_auth).await?;
+        let row = self
+            .stored_hash("recovery_auth_hash", recovery_auth)
+            .await?;
         Ok(Recovered {
             recovery_vault_key: str_of(&row, "recovery_vault_key")?,
-            kdf: KdfInfo { kdf_salt: str_of(&row, "kdf_salt")?, kdf_params: str_of(&row, "kdf_params")? },
+            kdf: KdfInfo {
+                kdf_salt: str_of(&row, "kdf_salt")?,
+                kdf_params: str_of(&row, "kdf_params")?,
+            },
             session: self.dummy_session(),
         })
     }
@@ -540,9 +673,18 @@ impl SyncBackend for D1Backend {
             )
             .await?;
         let has_more = rows.rows.len() > limit as usize;
-        let items = rows.rows.iter().take(limit as usize).map(item_from_row).collect::<Result<Vec<_>>>()?;
+        let items = rows
+            .rows
+            .iter()
+            .take(limit as usize)
+            .map(item_from_row)
+            .collect::<Result<Vec<_>>>()?;
         let next_since = items.last().map_or(since_seq, |i| i.seq);
-        Ok(PullPage { items, next_since, has_more })
+        Ok(PullPage {
+            items,
+            next_since,
+            has_more,
+        })
     }
 
     async fn push(&self, changes: Vec<Change>) -> Result<Vec<PushResult>> {

@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::crypto::{
-    AAD_RECOVERY_VAULT_KEY, AAD_VAULT_KEY, KdfParams, Key32, MasterKeys, decode_salt, device_aad, open_json, seal,
-    unwrap_key,
+    AAD_RECOVERY_VAULT_KEY, AAD_VAULT_KEY, KdfParams, Key32, MasterKeys, decode_salt, device_aad,
+    open_json, seal, unwrap_key,
 };
 use crate::error::{Error, Result};
 use crate::model::new_id;
@@ -37,7 +37,9 @@ use crate::vault::{PasswordChange, Vault};
 
 /// Runs CPU-heavy work (Argon2) off the async executor.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
-    tokio::task::spawn_blocking(f).await.map_err(|_| Error::Poisoned)?
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|_| Error::Poisoned)?
 }
 
 fn with_vault<T>(vault: &SharedVault, f: impl FnOnce(&mut Vault) -> Result<T>) -> Result<T> {
@@ -57,7 +59,10 @@ fn open_device(key: &[u8; 32], device_id: &str, sealed: &str) -> Option<DeviceIn
 }
 
 fn device_login(key: &[u8; 32], device_id: &str, info: &DeviceInfo) -> Result<DeviceLogin> {
-    Ok(DeviceLogin { device_id: device_id.to_owned(), sealed_name: seal_device(key, device_id, info)? })
+    Ok(DeviceLogin {
+        device_id: device_id.to_owned(),
+        sealed_name: seal_device(key, device_id, info)?,
+    })
 }
 
 // ---- flow A: first device enables sync ------------------------------------------------------
@@ -83,7 +88,13 @@ pub async fn enable_sync(
     setup_token: Option<&str>,
     device: DeviceInfo,
 ) -> Result<Session> {
-    with_vault(vault, |v| if v.is_unlocked() { Ok(()) } else { Err(Error::Locked) })?;
+    with_vault(vault, |v| {
+        if v.is_unlocked() {
+            Ok(())
+        } else {
+            Err(Error::Locked)
+        }
+    })?;
     if backend.health().await?.initialized {
         return Err(Error::RemoteInitialized);
     }
@@ -151,16 +162,25 @@ async fn authenticate(
     let meta = backend.fetch_vault().await?;
     if meta.kdf_salt != kdf.kdf_salt || meta.kdf_params != kdf.kdf_params {
         // The password was changed between our two requests; the keys we derived are stale.
-        return Err(Error::Server("vault changed during sign-in; try again".into()));
+        return Err(Error::Server(
+            "vault changed during sign-in; try again".into(),
+        ));
     }
     if meta.schema_version > crate::store::SCHEMA_VERSION {
-        return Err(Error::UnsupportedVersion(format!("remote schema {}", meta.schema_version)));
+        return Err(Error::UnsupportedVersion(format!(
+            "remote schema {}",
+            meta.schema_version
+        )));
     }
     let vault_key = unwrap_key(&keys.enc_key, AAD_VAULT_KEY, &meta.protected_vault_key)?;
 
     let proper = device_login(&vault_key, device_id, device)?;
     let session = backend.login(&keys.auth_key, &proper).await?;
-    Ok(Authenticated { session, meta, vault_key })
+    Ok(Authenticated {
+        session,
+        meta,
+        vault_key,
+    })
 }
 
 // ---- flow B: new device joins -------------------------------------------------------------
@@ -183,10 +203,18 @@ pub async fn restore_from_cloud(
     password: &str,
     device: DeviceInfo,
 ) -> Result<Session> {
-    with_vault(vault, |v| if v.status().initialized { Err(Error::VaultAlreadyInitialized) } else { Ok(()) })?;
+    with_vault(vault, |v| {
+        if v.status().initialized {
+            Err(Error::VaultAlreadyInitialized)
+        } else {
+            Ok(())
+        }
+    })?;
     let device_id = new_id();
     let auth = authenticate(backend, password, &device_id, &device).await?;
-    with_vault(vault, |v| v.install_remote_vault(&auth.meta, auth.vault_key, &device_id))?;
+    with_vault(vault, |v| {
+        v.install_remote_vault(&auth.meta, auth.vault_key, &device_id)
+    })?;
     sync_round(vault, backend, &SyncOptions::default()).await?;
     Ok(auth.session)
 }
@@ -206,7 +234,11 @@ pub async fn sign_in(
     device: DeviceInfo,
 ) -> Result<Session> {
     let device_id = with_vault(vault, |v| {
-        if v.status().initialized { Ok(v.device_id()) } else { Err(Error::VaultNotInitialized) }
+        if v.status().initialized {
+            Ok(v.device_id())
+        } else {
+            Err(Error::VaultNotInitialized)
+        }
     })?;
     let auth = authenticate(backend, password, &device_id, &device).await?;
     with_vault(vault, |v| {
@@ -257,7 +289,10 @@ pub async fn change_password_remote(
     current: &str,
     new: &str,
 ) -> Result<()> {
-    let (cur, new) = (Zeroizing::new(current.to_owned()), Zeroizing::new(new.to_owned()));
+    let (cur, new) = (
+        Zeroizing::new(current.to_owned()),
+        Zeroizing::new(new.to_owned()),
+    );
     let shared = Arc::clone(vault);
     let change = blocking(move || lock_vault(&shared)?.stage_password_change(&cur, &new)).await?;
     backend.update_vault_meta(meta_update(&change)).await?;
@@ -319,7 +354,11 @@ pub async fn recover_remote(
     let recovery_key = code.recovery_key();
     let recovery_auth = code.recovery_auth();
     let (device_id, existing) = with_vault(vault, |v| {
-        Ok(if v.status().initialized { (v.device_id(), true) } else { (new_id(), false) })
+        Ok(if v.status().initialized {
+            (v.device_id(), true)
+        } else {
+            (new_id(), false)
+        })
     })?;
 
     // The vault key is unknown until the recovery blob is unwrapped, so seal the name provisionally.
@@ -327,7 +366,11 @@ pub async fn recover_remote(
     let recovered = backend.recover(&recovery_auth, &provisional).await?;
 
     let params = KdfParams::from_json(&recovered.kdf.kdf_params)?;
-    let vault_key = match unwrap_key(&recovery_key, AAD_RECOVERY_VAULT_KEY, &recovered.recovery_vault_key) {
+    let vault_key = match unwrap_key(
+        &recovery_key,
+        AAD_RECOVERY_VAULT_KEY,
+        &recovered.recovery_vault_key,
+    ) {
         Ok(k) => k,
         Err(Error::Decrypt) => return Err(Error::WrongRecoveryCode),
         Err(e) => return Err(e),

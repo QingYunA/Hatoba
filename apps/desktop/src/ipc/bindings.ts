@@ -82,6 +82,13 @@ export const commands = {
 	sshTest: (input: HostInput) => __TAURI_INVOKE<TestResult>("ssh_test", { input }),
 	hostkeyRespond: (requestId: string, accept: boolean) => __TAURI_INVOKE<void>("hostkey_respond", { requestId, accept }),
 	authPromptRespond: (requestId: string, answers: string[] | null) => __TAURI_INVOKE<void>("auth_prompt_respond", { requestId, answers }),
+	forwardsList: (hostId: string) => __TAURI_INVOKE<ForwardView[]>("forwards_list", { hostId }),
+	forwardSave: (input: ForwardInput) => __TAURI_INVOKE<ForwardView>("forward_save", { input }),
+	forwardDelete: (id: string) => __TAURI_INVOKE<null>("forward_delete", { id }),
+	forwardStart: (sessionId: string, forwardId: string) => __TAURI_INVOKE<number>("forward_start", { sessionId, forwardId }),
+	forwardStop: (sessionId: string, forwardId: string) => __TAURI_INVOKE<null>("forward_stop", { sessionId, forwardId }),
+	/**  Forwards currently running on a session: `(forward_id, local_port)`. */
+	forwardsActive: (sessionId: string) => __TAURI_INVOKE<([string, number])[]>("forwards_active", { sessionId }),
 	sftpHome: (sessionId: string) => __TAURI_INVOKE<string>("sftp_home", { sessionId }),
 	sftpList: (sessionId: string, path: string) => __TAURI_INVOKE<FileEntry[]>("sftp_list", { sessionId, path }),
 	/**  SFTP-02 download. `local_path` comes from the native save dialog. */
@@ -118,6 +125,7 @@ export const commands = {
 /** Events */
 export const events = {
 	sshAuthPrompt: makeEvent<AuthPrompt>("ssh://auth-prompt"),
+	sshForward: makeEvent<ForwardStatusEvent>("ssh://forward"),
 	sshHostkeyPrompt: makeEvent<HostKeyPrompt>("ssh://hostkey-prompt"),
 	sshState: makeEvent<SessionStateEvent>("ssh://state"),
 	syncStatus: makeEvent<SyncStatus>("sync://status"),
@@ -219,6 +227,39 @@ export type FileEntry = {
 	size: number,
 	modified: number | null,
 	permissions: string,
+};
+
+export type ForwardInput = {
+	id: string | null,
+	host_id: string,
+	bind_address: string,
+	bind_port: number,
+	dest_host: string,
+	dest_port: number,
+	auto_start: boolean,
+};
+
+export type ForwardState = "running" | "stopped" | "failed";
+
+/**  A forward's state on one live session. */
+export type ForwardStatusEvent = {
+	session_id: string,
+	forward_id: string,
+	state: ForwardState,
+	/**  The actually bound local port (differs from `bind_port` when it was 0). */
+	local_port: number | null,
+	error: string | null,
+};
+
+/**  A saved local (`-L`) forward. Remote and dynamic forwards are P2. */
+export type ForwardView = {
+	id: string,
+	host_id: string,
+	bind_address: string,
+	bind_port: number,
+	dest_host: string,
+	dest_port: number,
+	auto_start: boolean,
 };
 
 export type GenerateAlgorithm = "ed25519" | "rsa";

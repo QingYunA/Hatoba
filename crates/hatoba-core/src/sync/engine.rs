@@ -47,7 +47,9 @@ pub struct SyncOptions {
 
 impl Default for SyncOptions {
     fn default() -> Self {
-        Self { conflict_suffix: DEFAULT_CONFLICT_SUFFIX.to_owned() }
+        Self {
+            conflict_suffix: DEFAULT_CONFLICT_SUFFIX.to_owned(),
+        }
     }
 }
 
@@ -79,7 +81,11 @@ impl SyncEngine {
     /// An engine with default options.
     #[must_use]
     pub fn new(vault: SharedVault, backend: Arc<dyn SyncBackend>) -> Self {
-        Self { vault, backend, options: SyncOptions::default() }
+        Self {
+            vault,
+            backend,
+            options: SyncOptions::default(),
+        }
     }
 
     /// Sets the suffix used for key conflict copies.
@@ -122,8 +128,18 @@ fn with_vault<T>(vault: &SharedVault, f: impl FnOnce(&mut Vault) -> Result<T>) -
 ///
 /// # Errors
 /// See [`SyncEngine::sync`].
-pub async fn sync_round(vault: &SharedVault, backend: &dyn SyncBackend, options: &SyncOptions) -> Result<SyncReport> {
-    with_vault(vault, |v| if v.is_unlocked() { Ok(()) } else { Err(Error::Locked) })?;
+pub async fn sync_round(
+    vault: &SharedVault,
+    backend: &dyn SyncBackend,
+    options: &SyncOptions,
+) -> Result<SyncReport> {
+    with_vault(vault, |v| {
+        if v.is_unlocked() {
+            Ok(())
+        } else {
+            Err(Error::Locked)
+        }
+    })?;
     let mut report = SyncReport::default();
     pull_all(vault, backend, options, &mut report).await?;
     push_all(vault, backend, options, &mut report).await?;
@@ -192,9 +208,20 @@ fn apply_pull_page(
         let mut batch = Batch::default();
         for remote in items {
             batch.max_seq = batch.max_seq.max(remote.seq);
-            apply_remote(tx, key, now, &options.conflict_suffix, remote, false, &mut batch)?;
+            apply_remote(
+                tx,
+                key,
+                now,
+                &options.conflict_suffix,
+                remote,
+                false,
+                &mut batch,
+            )?;
         }
-        let current = tx.get_meta_i64(meta::SYNC_CURSOR)?.and_then(|n| u64::try_from(n).ok()).unwrap_or(0);
+        let current = tx
+            .get_meta_i64(meta::SYNC_CURSOR)?
+            .and_then(|n| u64::try_from(n).ok())
+            .unwrap_or(0);
         let cursor = current.max(next_since).max(batch.max_seq);
         tx.set_meta(meta::SYNC_CURSOR, &cursor.to_string())?;
         Ok(batch)
@@ -296,7 +323,10 @@ fn resolve_conflict(
         Some(env) => match decode_envelope(key, id, env) {
             Ok(item) => Some(item),
             Err(_) => {
-                tracing::warn!(item_id = id, "remote item could not be decrypted; keeping local version");
+                tracing::warn!(
+                    item_id = id,
+                    "remote item could not be decrypted; keeping local version"
+                );
                 tx.set_row_revision(id, remote.revision)?;
                 return Ok(Disposition::LocalKept);
             }
@@ -307,7 +337,10 @@ fn resolve_conflict(
         Some(env) => match decode_envelope(key, id, env) {
             Ok(item) => Some(item),
             Err(_) => {
-                tracing::warn!(item_id = id, "local item could not be decrypted; taking remote version");
+                tracing::warn!(
+                    item_id = id,
+                    "local item could not be decrypted; taking remote version"
+                );
                 tx.upsert_item_row(&remote_row(remote))?;
                 batch.touched.push(id.to_owned());
                 batch.pulled += 1;
@@ -317,8 +350,12 @@ fn resolve_conflict(
         None => None,
     };
 
-    let local_side = local_item.as_ref().map_or_else(|| Side::tombstone(local.updated_at), Side::live);
-    let remote_side = remote_item.as_ref().map_or_else(|| Side::tombstone(remote.updated_at), Side::live);
+    let local_side = local_item
+        .as_ref()
+        .map_or_else(|| Side::tombstone(local.updated_at), Side::live);
+    let remote_side = remote_item
+        .as_ref()
+        .map_or_else(|| Side::tombstone(remote.updated_at), Side::live);
     let decision = decide(&local_side, &remote_side);
 
     if let Some(resolution) = decision.resolution() {
@@ -456,11 +493,23 @@ fn apply_push_results(
             match result {
                 PushResult::Ok { id, revision, .. } => {
                     // Clears `dirty` only if the row still holds exactly what was pushed.
-                    tx.mark_pushed(id, *revision, sent.envelope.as_deref().filter(|_| !sent.deleted))?;
+                    tx.mark_pushed(
+                        id,
+                        *revision,
+                        sent.envelope.as_deref().filter(|_| !sent.deleted),
+                    )?;
                     pushed_ok += 1;
                 }
                 PushResult::Conflict { server, .. } => {
-                    apply_remote(tx, key, now, &options.conflict_suffix, server, true, &mut batch)?;
+                    apply_remote(
+                        tx,
+                        key,
+                        now,
+                        &options.conflict_suffix,
+                        server,
+                        true,
+                        &mut batch,
+                    )?;
                 }
                 PushResult::Error { id, error } if error == "not_found" => {
                     // The server has no such row (for example its database was reset): resend as new.
@@ -493,7 +542,12 @@ mod tests {
 
     #[test]
     fn report_serialises_for_the_shell() {
-        let json = serde_json::to_value(SyncReport { pulled: 1, pushed: 2, ..SyncReport::default() }).unwrap();
+        let json = serde_json::to_value(SyncReport {
+            pulled: 1,
+            pushed: 2,
+            ..SyncReport::default()
+        })
+        .unwrap();
         assert_eq!(json["pulled"], 1);
         assert_eq!(json["pushed"], 2);
         assert_eq!(json["pending_after"], 0);

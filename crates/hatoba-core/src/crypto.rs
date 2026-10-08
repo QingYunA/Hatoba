@@ -107,7 +107,8 @@ pub fn b64_encode(bytes: &[u8]) -> String {
 /// # Errors
 /// [`Error::Format`] on invalid input.
 pub fn b64_decode(s: &str) -> Result<Vec<u8>> {
-    B64.decode(s).map_err(|_| Error::Format("invalid base64".into()))
+    B64.decode(s)
+        .map_err(|_| Error::Format("invalid base64".into()))
 }
 
 /// Lowercase hex encoding.
@@ -165,15 +166,27 @@ pub struct KdfFloor {
 
 impl KdfFloor {
     /// Production floor: the spec defaults, `m = 64 MiB, t = 3, p = 1`.
-    pub const PRODUCTION: Self = Self { m_kib: 64 * 1024, t: 3, p: 1 };
+    pub const PRODUCTION: Self = Self {
+        m_kib: 64 * 1024,
+        t: 3,
+        p: 1,
+    };
     /// Structural minimum only, for unit tests.
-    pub const RELAXED: Self = Self { m_kib: 8, t: 1, p: 1 };
+    pub const RELAXED: Self = Self {
+        m_kib: 8,
+        t: 1,
+        p: 1,
+    };
 
     /// The floor in force for this build: relaxed under `cfg(test)` or the `test-util` feature,
     /// [`Self::PRODUCTION`] otherwise.
     #[must_use]
     pub const fn active() -> Self {
-        if cfg!(any(test, feature = "test-util")) { Self::RELAXED } else { Self::PRODUCTION }
+        if cfg!(any(test, feature = "test-util")) {
+            Self::RELAXED
+        } else {
+            Self::PRODUCTION
+        }
     }
 }
 
@@ -213,7 +226,13 @@ pub struct KdfParams {
 impl Default for KdfParams {
     /// The spec values: Argon2id v19, m = 64 MiB, t = 3, p = 4.
     fn default() -> Self {
-        Self { alg: KdfAlg::Argon2id, version: ARGON2_VERSION, m_kib: 64 * 1024, t: 3, p: 4 }
+        Self {
+            alg: KdfAlg::Argon2id,
+            version: ARGON2_VERSION,
+            m_kib: 64 * 1024,
+            t: 3,
+            p: 4,
+        }
     }
 }
 
@@ -223,7 +242,13 @@ impl KdfParams {
     /// # Errors
     /// [`Error::WeakKdfParams`] if a value is out of the supported range or below the floor.
     pub fn new(m_kib: u32, t: u32, p: u32) -> Result<Self> {
-        let params = Self { alg: KdfAlg::Argon2id, version: ARGON2_VERSION, m_kib, t, p };
+        let params = Self {
+            alg: KdfAlg::Argon2id,
+            version: ARGON2_VERSION,
+            m_kib,
+            t,
+            p,
+        };
         params.validate()?;
         Ok(params)
     }
@@ -236,7 +261,13 @@ impl KdfParams {
     #[cfg(any(test, feature = "test-util"))]
     #[must_use]
     pub fn for_tests() -> Self {
-        Self { alg: KdfAlg::Argon2id, version: ARGON2_VERSION, m_kib: 64, t: 1, p: 1 }
+        Self {
+            alg: KdfAlg::Argon2id,
+            version: ARGON2_VERSION,
+            m_kib: 64,
+            t: 1,
+            p: 1,
+        }
     }
 
     /// Memory cost in KiB.
@@ -258,7 +289,13 @@ impl KdfParams {
     }
 
     fn from_raw(raw: RawKdfParams) -> Result<Self> {
-        let params = Self { alg: raw.alg, version: raw.version, m_kib: raw.m_kib, t: raw.t, p: raw.p };
+        let params = Self {
+            alg: raw.alg,
+            version: raw.version,
+            m_kib: raw.m_kib,
+            t: raw.t,
+            p: raw.p,
+        };
         params.validate()?;
         Ok(params)
     }
@@ -274,13 +311,22 @@ impl KdfParams {
     /// for out-of-range or too-cheap values.
     pub fn validate_with(&self, floor: KdfFloor) -> Result<()> {
         if self.version != ARGON2_VERSION {
-            return Err(Error::UnsupportedVersion(format!("argon2 version {}", self.version)));
+            return Err(Error::UnsupportedVersion(format!(
+                "argon2 version {}",
+                self.version
+            )));
         }
         if self.p > MAX_P || self.t > MAX_T || self.m_kib > MAX_M_KIB {
             return Err(Error::WeakKdfParams("cost parameter out of range".into()));
         }
-        if self.p < floor.p || self.t < floor.t || self.m_kib < floor.m_kib || self.m_kib < 8 * self.p {
-            return Err(Error::WeakKdfParams("cost parameters are below the minimum".into()));
+        if self.p < floor.p
+            || self.t < floor.t
+            || self.m_kib < floor.m_kib
+            || self.m_kib < 8 * self.p
+        {
+            return Err(Error::WeakKdfParams(
+                "cost parameters are below the minimum".into(),
+            ));
         }
         Ok(())
     }
@@ -325,7 +371,8 @@ pub fn derive_master_key(password: &str, salt: &[u8; SALT_LEN], params: &KdfPara
 pub fn hkdf_sha256(ikm: &[u8], info: &str) -> Key32 {
     let hk = Hkdf::<Sha256>::new(None, ikm);
     let mut out: Key32 = Zeroizing::new([0u8; KEY_LEN]);
-    hk.expand(info.as_bytes(), &mut *out).expect("32 bytes is a valid HKDF-SHA256 output length");
+    hk.expand(info.as_bytes(), &mut *out)
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
     out
 }
 
@@ -341,7 +388,10 @@ impl MasterKeys {
     /// Expands a master key into `enc_key` and `auth_key`.
     #[must_use]
     pub fn derive(master_key: &[u8; KEY_LEN]) -> Self {
-        Self { enc_key: hkdf_sha256(master_key, "hatoba/enc/v1"), auth_key: hkdf_sha256(master_key, "hatoba/auth/v1") }
+        Self {
+            enc_key: hkdf_sha256(master_key, "hatoba/enc/v1"),
+            auth_key: hkdf_sha256(master_key, "hatoba/auth/v1"),
+        }
     }
 
     /// Argon2id + HKDF in one step.
@@ -363,7 +413,9 @@ impl std::fmt::Debug for MasterKeys {
 /// # Errors
 /// [`Error::Format`] if it is not valid base64 of exactly 16 bytes.
 pub fn decode_salt(b64: &str) -> Result<[u8; SALT_LEN]> {
-    b64_decode(b64)?.try_into().map_err(|_| Error::Format("kdf_salt must be 16 bytes".into()))
+    b64_decode(b64)?
+        .try_into()
+        .map_err(|_| Error::Format("kdf_salt must be 16 bytes".into()))
 }
 
 // ---- envelope -----------------------------------------------------------------------------
@@ -391,7 +443,8 @@ impl Envelope {
     /// # Errors
     /// [`Error::Format`] for malformed JSON, [`Error::UnsupportedVersion`] for `v != 1`.
     pub fn from_json(s: &str) -> Result<Self> {
-        let env: Self = serde_json::from_str(s).map_err(|_| Error::Format("malformed envelope".into()))?;
+        let env: Self =
+            serde_json::from_str(s).map_err(|_| Error::Format("malformed envelope".into()))?;
         if env.v != ENVELOPE_VERSION {
             return Err(Error::UnsupportedVersion(format!("envelope v{}", env.v)));
         }
@@ -412,8 +465,14 @@ pub fn seal(key: &[u8; KEY_LEN], aad: &[u8], plaintext: &[u8]) -> Result<Envelop
     let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
     let mut buf = Zeroizing::new(Vec::with_capacity(plaintext.len() + TAG_LEN));
     buf.extend_from_slice(plaintext);
-    cipher(key).encrypt_in_place(&nonce, aad, &mut *buf).map_err(|_| Error::Format("plaintext too large".into()))?;
-    Ok(Envelope { v: ENVELOPE_VERSION, n: b64_encode(&nonce_bytes), c: b64_encode(&buf) })
+    cipher(key)
+        .encrypt_in_place(&nonce, aad, &mut *buf)
+        .map_err(|_| Error::Format("plaintext too large".into()))?;
+    Ok(Envelope {
+        v: ENVELOPE_VERSION,
+        n: b64_encode(&nonce_bytes),
+        c: b64_encode(&buf),
+    })
 }
 
 /// Authenticates and decrypts an envelope.
@@ -423,16 +482,22 @@ pub fn seal(key: &[u8; KEY_LEN], aad: &[u8], plaintext: &[u8]) -> Result<Envelop
 /// design); [`Error::Format`] / [`Error::UnsupportedVersion`] for a malformed envelope.
 pub fn open(key: &[u8; KEY_LEN], aad: &[u8], envelope: &Envelope) -> Result<Zeroizing<Vec<u8>>> {
     if envelope.v != ENVELOPE_VERSION {
-        return Err(Error::UnsupportedVersion(format!("envelope v{}", envelope.v)));
+        return Err(Error::UnsupportedVersion(format!(
+            "envelope v{}",
+            envelope.v
+        )));
     }
-    let nonce_bytes: [u8; NONCE_LEN] =
-        b64_decode(&envelope.n)?.try_into().map_err(|_| Error::Format("nonce must be 12 bytes".into()))?;
+    let nonce_bytes: [u8; NONCE_LEN] = b64_decode(&envelope.n)?
+        .try_into()
+        .map_err(|_| Error::Format("nonce must be 12 bytes".into()))?;
     let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
     let mut buf = Zeroizing::new(b64_decode(&envelope.c)?);
     if buf.len() < TAG_LEN {
         return Err(Error::Format("ciphertext too short".into()));
     }
-    cipher(key).decrypt_in_place(&nonce, aad, &mut *buf).map_err(|_| Error::Decrypt)?;
+    cipher(key)
+        .decrypt_in_place(&nonce, aad, &mut *buf)
+        .map_err(|_| Error::Decrypt)?;
     Ok(buf)
 }
 
@@ -492,22 +557,37 @@ mod tests {
     #[test]
     fn argon2id_vector_small_params() {
         let key = derive_master_key(PASSWORD, &test_salt(), &KdfParams::for_tests());
-        assert_eq!(*key, unhex::<32>("92dc5d67019623868bde079275e522f4b7e8213d3414ed85cbc2ac8a41117288"));
+        assert_eq!(
+            *key,
+            unhex::<32>("92dc5d67019623868bde079275e522f4b7e8213d3414ed85cbc2ac8a41117288")
+        );
     }
 
     #[test]
     fn argon2id_vector_real_params() {
         let key = derive_master_key(PASSWORD, &test_salt(), &KdfParams::default());
-        assert_eq!(*key, unhex::<32>("853b272a44db1421c02962669a55eb0994f3cab385ed1c4c79253eee19bab49e"));
+        assert_eq!(
+            *key,
+            unhex::<32>("853b272a44db1421c02962669a55eb0994f3cab385ed1c4c79253eee19bab49e")
+        );
     }
 
     #[test]
     fn hkdf_vectors() {
         let master = derive_master_key(PASSWORD, &test_salt(), &KdfParams::for_tests());
         let keys = MasterKeys::derive(&master);
-        assert_eq!(*keys.enc_key, unhex::<32>("196039f465971771301e121b2d0863f9816aedaeba7eff2d992a905b656118f8"));
-        assert_eq!(*keys.auth_key, unhex::<32>("4911c93eb526c915dc578ce8ac1b93f82e5e23d8f0a7d328f69bc571b330aa4a"));
-        assert_eq!(auth_hash(&keys.auth_key), "cfa7d7cc2609ceaa17b0f5ecbcac86ce726d4a73470d449ebf15372014af0f89");
+        assert_eq!(
+            *keys.enc_key,
+            unhex::<32>("196039f465971771301e121b2d0863f9816aedaeba7eff2d992a905b656118f8")
+        );
+        assert_eq!(
+            *keys.auth_key,
+            unhex::<32>("4911c93eb526c915dc578ce8ac1b93f82e5e23d8f0a7d328f69bc571b330aa4a")
+        );
+        assert_eq!(
+            auth_hash(&keys.auth_key),
+            "cfa7d7cc2609ceaa17b0f5ecbcac86ce726d4a73470d449ebf15372014af0f89"
+        );
     }
 
     #[test]
@@ -532,7 +612,10 @@ mod tests {
         assert_eq!(&**plain, br#"{"type":"host","name":"prod"}"#);
         // Same envelope under another item's AAD must not open.
         let other = item_aad("0192aaaa-bbbb-7ccc-8ddd-eeeeffff0002");
-        assert!(matches!(open_json(&key, other.as_bytes(), json), Err(Error::Decrypt)));
+        assert!(matches!(
+            open_json(&key, other.as_bytes(), json),
+            Err(Error::Decrypt)
+        ));
     }
 
     #[test]
@@ -571,34 +654,66 @@ mod tests {
         // flipped ciphertext bit
         let mut ct = b64_decode(&env.c).unwrap();
         ct[0] ^= 1;
-        let bad = Envelope { c: b64_encode(&ct), ..env.clone() };
+        let bad = Envelope {
+            c: b64_encode(&ct),
+            ..env.clone()
+        };
         assert!(matches!(open(&key, b"aad-1", &bad), Err(Error::Decrypt)));
         // flipped tag bit
         let mut ct = b64_decode(&env.c).unwrap();
         *ct.last_mut().unwrap() ^= 0x80;
-        let bad = Envelope { c: b64_encode(&ct), ..env.clone() };
+        let bad = Envelope {
+            c: b64_encode(&ct),
+            ..env.clone()
+        };
         assert!(matches!(open(&key, b"aad-1", &bad), Err(Error::Decrypt)));
         // flipped nonce bit
         let mut n = b64_decode(&env.n).unwrap();
         n[3] ^= 1;
-        let bad = Envelope { n: b64_encode(&n), ..env.clone() };
+        let bad = Envelope {
+            n: b64_encode(&n),
+            ..env.clone()
+        };
         assert!(matches!(open(&key, b"aad-1", &bad), Err(Error::Decrypt)));
         // truncated ciphertext
         let ct = b64_decode(&env.c).unwrap();
-        let bad = Envelope { c: b64_encode(&ct[..ct.len() - 1]), ..env.clone() };
+        let bad = Envelope {
+            c: b64_encode(&ct[..ct.len() - 1]),
+            ..env.clone()
+        };
         assert!(matches!(open(&key, b"aad-1", &bad), Err(Error::Decrypt)));
-        let bad = Envelope { c: b64_encode(&ct[..4]), ..env.clone() };
+        let bad = Envelope {
+            c: b64_encode(&ct[..4]),
+            ..env.clone()
+        };
         assert!(matches!(open(&key, b"aad-1", &bad), Err(Error::Format(_))));
     }
 
     #[test]
     fn malformed_envelopes_are_rejected() {
-        assert!(matches!(Envelope::from_json("not json"), Err(Error::Format(_))));
-        assert!(matches!(Envelope::from_json(r#"{"v":2,"n":"AA==","c":"AA=="}"#), Err(Error::UnsupportedVersion(_))));
+        assert!(matches!(
+            Envelope::from_json("not json"),
+            Err(Error::Format(_))
+        ));
+        assert!(matches!(
+            Envelope::from_json(r#"{"v":2,"n":"AA==","c":"AA=="}"#),
+            Err(Error::UnsupportedVersion(_))
+        ));
         let key = random_key().unwrap();
-        let short_nonce = Envelope { v: 1, n: b64_encode(&[0u8; 8]), c: b64_encode(&[0u8; 32]) };
-        assert!(matches!(open(&key, b"", &short_nonce), Err(Error::Format(_))));
-        let bad_b64 = Envelope { v: 1, n: "!!!".into(), c: "!!!".into() };
+        let short_nonce = Envelope {
+            v: 1,
+            n: b64_encode(&[0u8; 8]),
+            c: b64_encode(&[0u8; 32]),
+        };
+        assert!(matches!(
+            open(&key, b"", &short_nonce),
+            Err(Error::Format(_))
+        ));
+        let bad_b64 = Envelope {
+            v: 1,
+            n: "!!!".into(),
+            c: "!!!".into(),
+        };
         assert!(matches!(open(&key, b"", &bad_b64), Err(Error::Format(_))));
     }
 
@@ -607,28 +722,49 @@ mod tests {
         let wrapping = random_key().unwrap();
         let vault_key = random_key().unwrap();
         let json = wrap_key(&wrapping, AAD_VAULT_KEY, &vault_key).unwrap();
-        assert_eq!(*unwrap_key(&wrapping, AAD_VAULT_KEY, &json).unwrap(), *vault_key);
+        assert_eq!(
+            *unwrap_key(&wrapping, AAD_VAULT_KEY, &json).unwrap(),
+            *vault_key
+        );
         assert!(unwrap_key(&wrapping, AAD_RECOVERY_VAULT_KEY, &json).is_err());
     }
 
     #[test]
     fn kdf_params_json_round_trip_and_validation() {
         let params = KdfParams::default();
-        assert_eq!(params.to_json(), r#"{"alg":"argon2id","version":19,"m_kib":65536,"t":3,"p":4}"#);
+        assert_eq!(
+            params.to_json(),
+            r#"{"alg":"argon2id","version":19,"m_kib":65536,"t":3,"p":4}"#
+        );
         assert_eq!(KdfParams::from_json(&params.to_json()).unwrap(), params);
 
         // unknown algorithm
-        let err = KdfParams::from_json(r#"{"alg":"scrypt","version":19,"m_kib":65536,"t":3,"p":4}"#);
+        let err =
+            KdfParams::from_json(r#"{"alg":"scrypt","version":19,"m_kib":65536,"t":3,"p":4}"#);
         assert!(matches!(err, Err(Error::Format(_))));
         // unknown version, absurd costs, structurally impossible values
-        let err = KdfParams::from_json(r#"{"alg":"argon2id","version":16,"m_kib":65536,"t":3,"p":4}"#);
+        let err =
+            KdfParams::from_json(r#"{"alg":"argon2id","version":16,"m_kib":65536,"t":3,"p":4}"#);
         assert!(matches!(err, Err(Error::UnsupportedVersion(_))));
-        let err = KdfParams::from_json(r#"{"alg":"argon2id","version":19,"m_kib":999999999,"t":3,"p":4}"#);
+        let err = KdfParams::from_json(
+            r#"{"alg":"argon2id","version":19,"m_kib":999999999,"t":3,"p":4}"#,
+        );
         assert!(matches!(err, Err(Error::WeakKdfParams(_))));
-        assert!(KdfParams::from_json(r#"{"alg":"argon2id","version":19,"m_kib":65536,"t":0,"p":4}"#).is_err());
-        assert!(KdfParams::from_json(r#"{"alg":"argon2id","version":19,"m_kib":4,"t":1,"p":1}"#).is_err());
+        assert!(
+            KdfParams::from_json(r#"{"alg":"argon2id","version":19,"m_kib":65536,"t":0,"p":4}"#)
+                .is_err()
+        );
+        assert!(
+            KdfParams::from_json(r#"{"alg":"argon2id","version":19,"m_kib":4,"t":1,"p":1}"#)
+                .is_err()
+        );
         // serde path (used when KdfParams is nested in another document) validates too
-        assert!(serde_json::from_str::<KdfParams>(r#"{"alg":"argon2id","version":19,"m_kib":4,"t":1,"p":1}"#).is_err());
+        assert!(
+            serde_json::from_str::<KdfParams>(
+                r#"{"alg":"argon2id","version":19,"m_kib":4,"t":1,"p":1}"#
+            )
+            .is_err()
+        );
         assert!(KdfParams::new(65536, 3, 4).is_ok());
     }
 
@@ -637,10 +773,26 @@ mod tests {
         let floor = KdfFloor::PRODUCTION;
         // Exactly the floor, and stronger, are accepted.
         assert!(KdfParams::default().validate_with(floor).is_ok());
-        assert!(KdfParams::new(65536, 3, 1).unwrap().validate_with(floor).is_ok());
-        assert!(KdfParams::new(262_144, 4, 8).unwrap().validate_with(floor).is_ok());
+        assert!(
+            KdfParams::new(65536, 3, 1)
+                .unwrap()
+                .validate_with(floor)
+                .is_ok()
+        );
+        assert!(
+            KdfParams::new(262_144, 4, 8)
+                .unwrap()
+                .validate_with(floor)
+                .is_ok()
+        );
         // Anything weaker on any axis is refused (these only exist because tests relax the floor).
-        for (m, t, p) in [(65535, 3, 4), (19_456, 2, 1), (65536, 2, 4), (64, 1, 1), (8, 1, 1)] {
+        for (m, t, p) in [
+            (65535, 3, 4),
+            (19_456, 2, 1),
+            (65536, 2, 4),
+            (64, 1, 1),
+            (8, 1, 1),
+        ] {
             let weak = KdfParams::new(m, t, p).unwrap();
             assert!(
                 matches!(weak.validate_with(floor), Err(Error::WeakKdfParams(_))),

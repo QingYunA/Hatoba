@@ -3,6 +3,7 @@ import type {
   ConflictView,
   DeviceView,
   FileEntry,
+  ForwardView,
   GroupView,
   HostView,
   KeyView,
@@ -186,6 +187,11 @@ export const KEYS: KeyView[] = [
     updated_at: at(9, 30),
     used_by: [],
   },
+];
+
+export const FORWARDS: ForwardView[] = [
+  { id: "f-pg", host_id: "h-db-osaka-01", bind_address: "127.0.0.1", bind_port: 15432, dest_host: "127.0.0.1", dest_port: 5432, auto_start: true },
+  { id: "f-grafana", host_id: "h-api-tokyo", bind_address: "127.0.0.1", bind_port: 3000, dest_host: "grafana.internal", dest_port: 3000, auto_start: false },
 ];
 
 export const SETTINGS: SettingsView = {

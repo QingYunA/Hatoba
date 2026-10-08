@@ -568,3 +568,48 @@ pub enum LockReason {
     Idle,
     Sleep,
 }
+
+// ───────────────────────── Port forwarding (FWD-01/02) ─────────────────────────
+
+/// A saved local (`-L`) forward. Remote and dynamic forwards are P2.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ForwardView {
+    pub id: String,
+    pub host_id: String,
+    pub bind_address: String,
+    pub bind_port: u16,
+    pub dest_host: String,
+    pub dest_port: u16,
+    pub auto_start: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Type)]
+pub struct ForwardInput {
+    pub id: Option<String>,
+    pub host_id: String,
+    pub bind_address: String,
+    pub bind_port: u16,
+    pub dest_host: String,
+    pub dest_port: u16,
+    pub auto_start: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardState {
+    Running,
+    Stopped,
+    Failed,
+}
+
+/// A forward's state on one live session.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "ssh://forward")]
+pub struct ForwardStatusEvent {
+    pub session_id: String,
+    pub forward_id: String,
+    pub state: ForwardState,
+    /// The actually bound local port (differs from `bind_port` when it was 0).
+    pub local_port: Option<u16>,
+    pub error: Option<String>,
+}

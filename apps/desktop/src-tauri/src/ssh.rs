@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use hatoba_core::model::{Host, HostAuth, Item, KnownHost};
 use hatoba_core::vault::Vault;
 use hatoba_ssh::{
-    AuthMethod, ConnectConfig, HostKeyInfo, HostKeyVerifier, JumpHop, KeyboardInteractive,
-    PromptRequest, SftpClient, ShellHandle, SshSession,
+    AuthMethod, ConnectConfig, ForwardHandle, HostKeyInfo, HostKeyVerifier, JumpHop,
+    KeyboardInteractive, PromptRequest, SftpClient, ShellHandle, SshSession,
 };
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -29,6 +29,55 @@ pub struct LiveSession {
     pub session: SshSession,
     pub shell: ShellHandle,
     pub sftp: OnceCell<SftpClient>,
+    /// Running local port forwards by forward item id (FWD-01).
+    pub forwards: Mutex<HashMap<String, ForwardHandle>>,
+}
+
+impl LiveSession {
+    pub fn new(session: SshSession, shell: ShellHandle) -> Self {
+        Self {
+            session,
+            shell,
+            sftp: OnceCell::new(),
+            forwards: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn add_forward(&self, id: &str, handle: ForwardHandle) {
+        if let Some(old) = lock(&self.forwards).insert(id.to_owned(), handle) {
+            old.stop();
+        }
+    }
+
+    pub fn stop_forward(&self, id: &str) {
+        if let Some(handle) = lock(&self.forwards).remove(id) {
+            handle.stop();
+        }
+    }
+
+    pub fn forward_port(&self, id: &str) -> Option<u16> {
+        lock(&self.forwards)
+            .get(id)
+            .filter(|h| h.is_running())
+            .map(ForwardHandle::local_port)
+    }
+
+    pub fn active_forwards(&self) -> Vec<(String, u16)> {
+        lock(&self.forwards)
+            .iter()
+            .filter(|(_, h)| h.is_running())
+            .map(|(id, h)| (id.clone(), h.local_port()))
+            .collect()
+    }
+
+    /// Stops forwards and closes the shell and connection.
+    pub async fn close(&self) {
+        for (_, handle) in lock(&self.forwards).drain() {
+            handle.stop();
+        }
+        self.shell.close().await;
+        self.session.disconnect().await;
+    }
 }
 
 #[derive(Default)]
@@ -71,8 +120,7 @@ impl SshManager {
     pub async fn disconnect_all(&self) {
         let all: Vec<Arc<LiveSession>> = lock(&self.sessions).drain().map(|(_, s)| s).collect();
         for live in all {
-            live.shell.close().await;
-            live.session.disconnect().await;
+            live.close().await;
         }
     }
 

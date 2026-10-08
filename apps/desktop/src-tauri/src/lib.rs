@@ -12,7 +12,9 @@ mod ssh;
 mod state;
 mod sync;
 
-use commands::{app, hosts, keys, settings, sftp, ssh as ssh_cmd, sync as sync_cmd, vault};
+use commands::{
+    app, forwards, hosts, keys, settings, sftp, ssh as ssh_cmd, sync as sync_cmd, vault,
+};
 use tauri::Manager;
 use tauri_specta::{collect_commands, collect_events};
 
@@ -68,6 +70,12 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ssh_cmd::ssh_test,
             ssh_cmd::hostkey_respond,
             ssh_cmd::auth_prompt_respond,
+            forwards::forwards_list,
+            forwards::forward_save,
+            forwards::forward_delete,
+            forwards::forward_start,
+            forwards::forward_stop,
+            forwards::forwards_active,
             sftp::sftp_home,
             sftp::sftp_list,
             sftp::sftp_download,
@@ -99,6 +107,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             dto::AuthPrompt,
             dto::SessionStateEvent,
             dto::TransferProgressEvent,
+            dto::ForwardStatusEvent,
         ])
 }
 

@@ -16,8 +16,9 @@ use zeroize::Zeroizing;
 use crate::crypto::b64_encode;
 use crate::error::{Error, Result};
 use crate::sync::backend::{
-    Change, DeviceLogin, KdfInfo, MAX_CHANGES_PER_PUSH, PullPage, PushResult, Recovered, RemoteDevice, RemoteItem,
-    ServerInfo, Session, SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
+    Change, DeviceLogin, KdfInfo, MAX_CHANGES_PER_PUSH, PullPage, PushResult, Recovered,
+    RemoteDevice, RemoteItem, ServerInfo, Session, SyncBackend, VaultInit, VaultMeta,
+    VaultMetaUpdate,
 };
 use crate::sync::http::{
     build_client, error_code, is_loopback_host, map_transport, read_body, retry_after,
@@ -36,20 +37,34 @@ pub fn normalize_worker_url(input: &str) -> Result<String> {
     if trimmed.is_empty() {
         return Err(Error::InvalidUrl("empty URL".into()));
     }
-    let with_scheme = if trimmed.contains("://") { trimmed.to_owned() } else { format!("https://{trimmed}") };
+    let with_scheme = if trimmed.contains("://") {
+        trimmed.to_owned()
+    } else {
+        format!("https://{trimmed}")
+    };
     let url = Url::parse(&with_scheme).map_err(|_| Error::InvalidUrl("not a valid URL".into()))?;
-    let host = url.host_str().ok_or_else(|| Error::InvalidUrl("missing host".into()))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| Error::InvalidUrl("missing host".into()))?;
     match url.scheme() {
         "https" => {}
         "http" if is_loopback_host(host) => {}
-        "http" => return Err(Error::InvalidUrl("plain http is only allowed for localhost".into())),
+        "http" => {
+            return Err(Error::InvalidUrl(
+                "plain http is only allowed for localhost".into(),
+            ));
+        }
         _ => return Err(Error::InvalidUrl("unsupported scheme".into())),
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(Error::InvalidUrl("credentials in the URL are not allowed".into()));
+        return Err(Error::InvalidUrl(
+            "credentials in the URL are not allowed".into(),
+        ));
     }
     if url.query().is_some() || url.fragment().is_some() {
-        return Err(Error::InvalidUrl("query strings and fragments are not allowed".into()));
+        return Err(Error::InvalidUrl(
+            "query strings and fragments are not allowed".into(),
+        ));
     }
     Ok(url.as_str().trim_end_matches('/').to_owned())
 }
@@ -85,8 +100,15 @@ impl WorkerBackend {
     /// [`Error::InvalidUrl`].
     pub fn new(url: &str) -> Result<Self> {
         let base = normalize_worker_url(url)?;
-        let loopback = Url::parse(&base).ok().and_then(|u| u.host_str().map(is_loopback_host)).unwrap_or(false);
-        Ok(Self { base, client: build_client(loopback)?, session: RwLock::new(None) })
+        let loopback = Url::parse(&base)
+            .ok()
+            .and_then(|u| u.host_str().map(is_loopback_host))
+            .unwrap_or(false);
+        Ok(Self {
+            base,
+            client: build_client(loopback)?,
+            session: RwLock::new(None),
+        })
     }
 
     /// The normalised base URL (what `SyncConfig::Worker` stores).
@@ -125,7 +147,9 @@ impl WorkerBackend {
             return Err(Error::Unauthorized);
         }
         if let Some(body) = body {
-            req = req.header(CONTENT_TYPE, "application/json").body(body.to_vec());
+            req = req
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.to_vec());
         }
         let resp = req.send().await.map_err(|e| map_transport(&e))?;
         let (status, headers, bytes) = read_body(resp).await?;
@@ -136,13 +160,30 @@ impl WorkerBackend {
     }
 
     /// Authenticated call with the installed session.
-    async fn call_session(&self, method: Method, path: &str, body: Option<Zeroizing<Vec<u8>>>) -> Result<Vec<u8>> {
+    async fn call_session(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<Vec<u8>> {
         let token = self.current_session().map(|s| s.token);
-        self.call(method, path, Endpoint::Session, token.as_deref().map(String::as_str), body).await
+        self.call(
+            method,
+            path,
+            Endpoint::Session,
+            token.as_deref().map(String::as_str),
+            body,
+        )
+        .await
     }
 }
 
-fn map_failure(status: StatusCode, retry_after_secs: Option<u64>, body: &[u8], endpoint: Endpoint) -> Error {
+fn map_failure(
+    status: StatusCode,
+    retry_after_secs: Option<u64>,
+    body: &[u8],
+    endpoint: Endpoint,
+) -> Error {
     let code = error_code(body);
     match status {
         StatusCode::UNAUTHORIZED => match endpoint {
@@ -153,7 +194,9 @@ fn map_failure(status: StatusCode, retry_after_secs: Option<u64>, body: &[u8], e
         },
         StatusCode::FORBIDDEN => Error::Unauthorized,
         StatusCode::NOT_FOUND => {
-            if code.as_deref() == Some("not_initialized") || (endpoint == Endpoint::Prelogin && code.is_none()) {
+            if code.as_deref() == Some("not_initialized")
+                || (endpoint == Endpoint::Prelogin && code.is_none())
+            {
                 Error::RemoteNotInitialized
             } else {
                 Error::Server(format!("http 404{}", suffix(code.as_deref())))
@@ -161,7 +204,11 @@ fn map_failure(status: StatusCode, retry_after_secs: Option<u64>, body: &[u8], e
         }
         StatusCode::CONFLICT => Error::RemoteInitialized,
         StatusCode::TOO_MANY_REQUESTS => Error::RateLimited { retry_after_secs },
-        other => Error::Server(format!("http {}{}", other.as_u16(), suffix(code.as_deref()))),
+        other => Error::Server(format!(
+            "http {}{}",
+            other.as_u16(),
+            suffix(code.as_deref())
+        )),
     }
 }
 
@@ -311,11 +358,15 @@ fn push_result(w: ResultWire) -> Result<PushResult> {
     match w.status.as_str() {
         "ok" => Ok(PushResult::Ok {
             id: w.id,
-            revision: w.revision.ok_or_else(|| Error::Protocol("ok result without revision".into()))?,
+            revision: w
+                .revision
+                .ok_or_else(|| Error::Protocol("ok result without revision".into()))?,
             seq: w.seq.unwrap_or(0),
         }),
         "conflict" => {
-            let s = w.server.ok_or_else(|| Error::Protocol("conflict result without server row".into()))?;
+            let s = w
+                .server
+                .ok_or_else(|| Error::Protocol("conflict result without server row".into()))?;
             Ok(PushResult::Conflict {
                 server: RemoteItem {
                     id: w.id.clone(),
@@ -328,23 +379,41 @@ fn push_result(w: ResultWire) -> Result<PushResult> {
                 id: w.id,
             })
         }
-        "error" => Ok(PushResult::Error { id: w.id, error: w.error.unwrap_or_else(|| "error".into()) }),
-        other => Err(Error::Protocol(format!("unknown push status {}", other.chars().take(16).collect::<String>()))),
+        "error" => Ok(PushResult::Error {
+            id: w.id,
+            error: w.error.unwrap_or_else(|| "error".into()),
+        }),
+        other => Err(Error::Protocol(format!(
+            "unknown push status {}",
+            other.chars().take(16).collect::<String>()
+        ))),
     }
 }
 
 #[async_trait]
 impl SyncBackend for WorkerBackend {
     async fn health(&self) -> Result<ServerInfo> {
-        let bytes = self.call(Method::GET, "/v1/health", Endpoint::Public, None, None).await?;
+        let bytes = self
+            .call(Method::GET, "/v1/health", Endpoint::Public, None, None)
+            .await?;
         let w: HealthWire = parse(&bytes)?;
-        Ok(ServerInfo { service: w.service, version: w.version, api: w.api, initialized: w.initialized })
+        Ok(ServerInfo {
+            service: w.service,
+            version: w.version,
+            api: w.api,
+            initialized: w.initialized,
+        })
     }
 
     async fn prelogin(&self) -> Result<KdfInfo> {
-        let bytes = self.call(Method::GET, "/v1/prelogin", Endpoint::Prelogin, None, None).await?;
+        let bytes = self
+            .call(Method::GET, "/v1/prelogin", Endpoint::Prelogin, None, None)
+            .await?;
         let w: PreloginWire = parse(&bytes)?;
-        Ok(KdfInfo { kdf_salt: w.kdf_salt, kdf_params: w.kdf_params })
+        Ok(KdfInfo {
+            kdf_salt: w.kdf_salt,
+            kdf_params: w.kdf_params,
+        })
     }
 
     async fn setup(&self, init: VaultInit) -> Result<()> {
@@ -362,7 +431,14 @@ impl SyncBackend for WorkerBackend {
             "recovery_vault_key": init.recovery_vault_key,
             "recovery_auth": b64_encode(&*init.recovery_auth),
         }))?;
-        self.call(Method::POST, "/v1/setup", Endpoint::Setup, Some(token.as_str()), Some(body)).await?;
+        self.call(
+            Method::POST,
+            "/v1/setup",
+            Endpoint::Setup,
+            Some(token.as_str()),
+            Some(body),
+        )
+        .await?;
         Ok(())
     }
 
@@ -372,9 +448,14 @@ impl SyncBackend for WorkerBackend {
             "device_id": device.device_id,
             "device_name": device.sealed_name,
         }))?;
-        let bytes = self.call(Method::POST, "/v1/login", Endpoint::Login, None, Some(body)).await?;
+        let bytes = self
+            .call(Method::POST, "/v1/login", Endpoint::Login, None, Some(body))
+            .await?;
         let w: SessionWire = parse(&bytes)?;
-        let session = Session { token: w.session_token, expires_at: w.expires_at };
+        let session = Session {
+            token: w.session_token,
+            expires_at: w.expires_at,
+        };
         self.store_session(Some(session.clone()));
         Ok(session)
     }
@@ -385,13 +466,27 @@ impl SyncBackend for WorkerBackend {
             "device_id": device.device_id,
             "device_name": device.sealed_name,
         }))?;
-        let bytes = self.call(Method::POST, "/v1/recover", Endpoint::Recover, None, Some(body)).await?;
+        let bytes = self
+            .call(
+                Method::POST,
+                "/v1/recover",
+                Endpoint::Recover,
+                None,
+                Some(body),
+            )
+            .await?;
         let w: RecoverWire = parse(&bytes)?;
-        let session = Session { token: w.session_token, expires_at: w.expires_at };
+        let session = Session {
+            token: w.session_token,
+            expires_at: w.expires_at,
+        };
         self.store_session(Some(session.clone()));
         Ok(Recovered {
             recovery_vault_key: w.recovery_vault_key,
-            kdf: KdfInfo { kdf_salt: w.kdf_salt, kdf_params: w.kdf_params },
+            kdf: KdfInfo {
+                kdf_salt: w.kdf_salt,
+                kdf_params: w.kdf_params,
+            },
             session,
         })
     }
@@ -413,14 +508,22 @@ impl SyncBackend for WorkerBackend {
         let path = format!("/v1/items?since={since_seq}&limit={limit}");
         let bytes = self.call_session(Method::GET, &path, None).await?;
         let w: PullWire = parse(&bytes)?;
-        Ok(PullPage { items: w.items.into_iter().map(RemoteItem::from).collect(), next_since: w.next_since, has_more: w.has_more })
+        Ok(PullPage {
+            items: w.items.into_iter().map(RemoteItem::from).collect(),
+            next_since: w.next_since,
+            has_more: w.has_more,
+        })
     }
 
     async fn push(&self, changes: Vec<Change>) -> Result<Vec<PushResult>> {
         let mut out = Vec::with_capacity(changes.len());
         for chunk in changes.chunks(MAX_CHANGES_PER_PUSH) {
-            let body = to_json_body(&json!({ "changes": chunk.iter().map(change_json).collect::<Vec<_>>() }))?;
-            let bytes = self.call_session(Method::POST, "/v1/items", Some(body)).await?;
+            let body = to_json_body(
+                &json!({ "changes": chunk.iter().map(change_json).collect::<Vec<_>>() }),
+            )?;
+            let bytes = self
+                .call_session(Method::POST, "/v1/items", Some(body))
+                .await?;
             let w: PushWire = parse(&bytes)?;
             for r in w.results {
                 out.push(push_result(r)?);
@@ -441,15 +544,19 @@ impl SyncBackend for WorkerBackend {
             body["recovery_vault_key"] = json!(recovery.recovery_vault_key);
             body["recovery_auth"] = json!(b64_encode(&*recovery.recovery_auth));
         }
-        self.call_session(Method::PUT, "/v1/vault/password", Some(to_json_body(&body)?)).await?;
+        self.call_session(
+            Method::PUT,
+            "/v1/vault/password",
+            Some(to_json_body(&body)?),
+        )
+        .await?;
         Ok(())
     }
 
     async fn devices(&self) -> Result<Vec<RemoteDevice>> {
         let bytes = self.call_session(Method::GET, "/v1/devices", None).await?;
         let w: DevicesWire = parse(&bytes)?;
-        Ok(w
-            .devices
+        Ok(w.devices
             .into_iter()
             .map(|d| RemoteDevice {
                 device_id: d.device_id,
@@ -464,10 +571,15 @@ impl SyncBackend for WorkerBackend {
 
     async fn revoke_device(&self, device_id: &str) -> Result<()> {
         // Device ids are UUIDs; refuse anything that could alter the path.
-        if device_id.is_empty() || !device_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        if device_id.is_empty()
+            || !device_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
             return Err(Error::InvalidUrl("invalid device id".into()));
         }
-        self.call_session(Method::DELETE, &format!("/v1/devices/{device_id}"), None).await?;
+        self.call_session(Method::DELETE, &format!("/v1/devices/{device_id}"), None)
+            .await?;
         Ok(())
     }
 
@@ -483,10 +595,22 @@ mod tests {
     #[test]
     fn url_normalisation() {
         let ok = |s: &str| normalize_worker_url(s).unwrap();
-        assert_eq!(ok("sync.example.workers.dev"), "https://sync.example.workers.dev");
-        assert_eq!(ok("  https://sync.example.workers.dev/  "), "https://sync.example.workers.dev");
-        assert_eq!(ok("https://sync.example.workers.dev///"), "https://sync.example.workers.dev");
-        assert_eq!(ok("https://example.com/hatoba/"), "https://example.com/hatoba");
+        assert_eq!(
+            ok("sync.example.workers.dev"),
+            "https://sync.example.workers.dev"
+        );
+        assert_eq!(
+            ok("  https://sync.example.workers.dev/  "),
+            "https://sync.example.workers.dev"
+        );
+        assert_eq!(
+            ok("https://sync.example.workers.dev///"),
+            "https://sync.example.workers.dev"
+        );
+        assert_eq!(
+            ok("https://example.com/hatoba/"),
+            "https://example.com/hatoba"
+        );
         assert_eq!(ok("http://localhost:8787/"), "http://localhost:8787");
         assert_eq!(ok("http://127.0.0.1:8787"), "http://127.0.0.1:8787");
         assert_eq!(ok("localhost:8787"), "https://localhost:8787");
@@ -507,7 +631,10 @@ mod tests {
             "https://",
             "not a url at all",
         ] {
-            assert!(matches!(normalize_worker_url(bad), Err(Error::InvalidUrl(_))), "{bad:?} should be rejected");
+            assert!(
+                matches!(normalize_worker_url(bad), Err(Error::InvalidUrl(_))),
+                "{bad:?} should be rejected"
+            );
         }
     }
 
@@ -517,17 +644,52 @@ mod tests {
         let m = |status: u16, ep: Endpoint, body: &[u8]| {
             map_failure(StatusCode::from_u16(status).unwrap(), Some(7), body, ep)
         };
-        assert!(matches!(m(401, Endpoint::Session, b""), Error::Unauthorized));
-        assert!(matches!(m(401, Endpoint::Setup, b""), Error::InvalidSetupToken));
+        assert!(matches!(
+            m(401, Endpoint::Session, b""),
+            Error::Unauthorized
+        ));
+        assert!(matches!(
+            m(401, Endpoint::Setup, b""),
+            Error::InvalidSetupToken
+        ));
         assert!(matches!(m(401, Endpoint::Login, b""), Error::WrongPassword));
-        assert!(matches!(m(401, Endpoint::Recover, b""), Error::WrongRecoveryCode));
-        assert!(matches!(m(403, Endpoint::Session, br#"{"error":"insufficient_scope"}"#), Error::Unauthorized));
-        assert!(matches!(m(404, Endpoint::Login, code), Error::RemoteNotInitialized));
-        assert!(matches!(m(404, Endpoint::Prelogin, b""), Error::RemoteNotInitialized));
-        assert!(matches!(m(404, Endpoint::Session, b"<html>"), Error::Server(_)));
-        assert!(matches!(m(409, Endpoint::Setup, b""), Error::RemoteInitialized));
-        assert!(matches!(m(429, Endpoint::Login, b""), Error::RateLimited { retry_after_secs: Some(7) }));
-        let Error::Server(msg) = m(503, Endpoint::Public, br#"{"error":"database_unavailable"}"#) else { panic!() };
+        assert!(matches!(
+            m(401, Endpoint::Recover, b""),
+            Error::WrongRecoveryCode
+        ));
+        assert!(matches!(
+            m(403, Endpoint::Session, br#"{"error":"insufficient_scope"}"#),
+            Error::Unauthorized
+        ));
+        assert!(matches!(
+            m(404, Endpoint::Login, code),
+            Error::RemoteNotInitialized
+        ));
+        assert!(matches!(
+            m(404, Endpoint::Prelogin, b""),
+            Error::RemoteNotInitialized
+        ));
+        assert!(matches!(
+            m(404, Endpoint::Session, b"<html>"),
+            Error::Server(_)
+        ));
+        assert!(matches!(
+            m(409, Endpoint::Setup, b""),
+            Error::RemoteInitialized
+        ));
+        assert!(matches!(
+            m(429, Endpoint::Login, b""),
+            Error::RateLimited {
+                retry_after_secs: Some(7)
+            }
+        ));
+        let Error::Server(msg) = m(
+            503,
+            Endpoint::Public,
+            br#"{"error":"database_unavailable"}"#,
+        ) else {
+            panic!()
+        };
         assert_eq!(msg, "http 503 database_unavailable");
     }
 
@@ -544,7 +706,10 @@ mod tests {
             setup_token: Some(Zeroizing::new("tok".into())),
         };
         assert!(!format!("{init:?}").contains('7'));
-        let s = Session { token: Zeroizing::new("secret-token".into()), expires_at: 1 };
+        let s = Session {
+            token: Zeroizing::new("secret-token".into()),
+            expires_at: 1,
+        };
         assert!(!format!("{s:?}").contains("secret-token"));
     }
 }

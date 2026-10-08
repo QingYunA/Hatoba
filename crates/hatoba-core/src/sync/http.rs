@@ -40,7 +40,9 @@ pub(crate) fn build_client(loopback: bool) -> Result<reqwest::Client> {
     if loopback {
         builder = builder.no_proxy();
     }
-    builder.build().map_err(|_| Error::Server("could not build the HTTP client".into()))
+    builder
+        .build()
+        .map_err(|_| Error::Server("could not build the HTTP client".into()))
 }
 
 /// Maps a transport-level failure (no HTTP response) to an error.
@@ -56,7 +58,9 @@ pub(crate) fn map_transport(err: &reqwest::Error) -> Error {
 }
 
 /// Reads a response body with a size cap.
-pub(crate) async fn read_body(mut resp: reqwest::Response) -> Result<(StatusCode, HeaderMap, Vec<u8>)> {
+pub(crate) async fn read_body(
+    mut resp: reqwest::Response,
+) -> Result<(StatusCode, HeaderMap, Vec<u8>)> {
     let status = resp.status();
     let headers = resp.headers().clone();
     let mut body = Vec::new();
@@ -79,8 +83,11 @@ struct ErrorBody {
 pub(crate) fn error_code(body: &[u8]) -> Option<String> {
     let parsed: ErrorBody = serde_json::from_slice(body).ok()?;
     let code = parsed.error?;
-    let clean: String =
-        code.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' ')).take(64).collect();
+    let clean: String = code
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+        .take(64)
+        .collect();
     (!clean.is_empty()).then_some(clean)
 }
 
@@ -100,7 +107,10 @@ mod tests {
 
     #[test]
     fn error_codes_are_sanitised() {
-        assert_eq!(error_code(br#"{"error":"not_initialized","message":"x"}"#).as_deref(), Some("not_initialized"));
+        assert_eq!(
+            error_code(br#"{"error":"not_initialized","message":"x"}"#).as_deref(),
+            Some("not_initialized")
+        );
         assert_eq!(error_code(br#"{"error":"a<b>\n"}"#).as_deref(), Some("ab"));
         assert_eq!(error_code(b"<html>").as_deref(), None);
         assert_eq!(error_code(br#"{"error":""}"#).as_deref(), None);

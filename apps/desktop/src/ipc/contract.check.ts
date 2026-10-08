@@ -34,6 +34,8 @@ export type ResponsesMatch = [
   Check<Assignable<Rust.SettingsView, Ui.SettingsView>>,
   Check<Assignable<Rust.LocalPrefs, Ui.LocalPrefs>>,
   Check<Assignable<Rust.VaultLockedEvent, Ui.VaultLockedEvent>>,
+  Check<Assignable<Rust.ForwardView, Ui.ForwardView>>,
+  Check<Assignable<Rust.ForwardStatusEvent, Ui.ForwardStatusEvent>>,
 ];
 
 /** UI → Rust: command arguments. */
@@ -46,4 +48,5 @@ export type InputsMatch = [
   Check<Assignable<Ui.SyncConfigInput, Rust.SyncConfigInput>>,
   Check<Assignable<Ui.SettingsView, Rust.SettingsView>>,
   Check<Assignable<Ui.LocalPrefs, Rust.LocalPrefs>>,
+  Check<Assignable<Ui.ForwardInput, Rust.ForwardInput>>,
 ];

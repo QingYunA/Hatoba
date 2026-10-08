@@ -76,12 +76,20 @@ pub(crate) fn export(store: &Store, path: &Path, now_ms: i64) -> Result<()> {
         items: store
             .item_rows()?
             .into_iter()
-            .map(|r| BackupItem { id: r.id, envelope: r.envelope, deleted: r.deleted, updated_at: r.updated_at })
+            .map(|r| BackupItem {
+                id: r.id,
+                envelope: r.envelope,
+                deleted: r.deleted,
+                updated_at: r.updated_at,
+            })
             .collect(),
     };
     let json = serde_json::to_vec_pretty(&file)?;
 
-    let mut tmp_name = path.file_name().ok_or_else(|| Error::Format("backup path has no file name".into()))?.to_owned();
+    let mut tmp_name = path
+        .file_name()
+        .ok_or_else(|| Error::Format("backup path has no file name".into()))?
+        .to_owned();
     tmp_name.push(".tmp");
     let tmp = path.with_file_name(tmp_name);
     {
@@ -99,12 +107,21 @@ pub(crate) fn export(store: &Store, path: &Path, now_ms: i64) -> Result<()> {
 #[cfg(unix)]
 fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
-    std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
 }
 
 #[cfg(not(unix))]
 fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
 }
 
 /// Reads and structurally validates a backup file.
@@ -114,7 +131,8 @@ fn open_private(path: &Path) -> std::io::Result<std::fs::File> {
 /// [`Error::UnsupportedVersion`] for a newer backup version.
 pub fn read_backup(path: &Path) -> Result<BackupFile> {
     let bytes = std::fs::read(path)?;
-    let file: BackupFile = serde_json::from_slice(&bytes).map_err(|_| Error::Format("not a Hatoba backup".into()))?;
+    let file: BackupFile =
+        serde_json::from_slice(&bytes).map_err(|_| Error::Format("not a Hatoba backup".into()))?;
     if file.format != BACKUP_FORMAT {
         return Err(Error::Format("not a Hatoba backup".into()));
     }
@@ -147,7 +165,10 @@ impl Vault {
         };
         let check = seal_vault_check(&vault_key)?;
         self.store.transaction(|tx| {
-            tx.set_meta(meta::SCHEMA_VERSION, &crate::store::SCHEMA_VERSION.to_string())?;
+            tx.set_meta(
+                meta::SCHEMA_VERSION,
+                &crate::store::SCHEMA_VERSION.to_string(),
+            )?;
             tx.set_meta(meta::KDF_SALT, &file.kdf_salt)?;
             tx.set_meta(meta::KDF_PARAMS, &file.kdf_params)?;
             tx.set_meta(meta::PROTECTED_VAULT_KEY, &file.protected_vault_key)?;
@@ -180,7 +201,9 @@ mod tests {
 
     fn populated() -> (Vault, String, String) {
         let mut vault = Vault::open_in_memory().unwrap();
-        vault.create_with_params(PW, KdfParams::for_tests()).unwrap();
+        vault
+            .create_with_params(PW, KdfParams::for_tests())
+            .unwrap();
         let host = vault
             .put(
                 None,
@@ -191,7 +214,15 @@ mod tests {
                 }),
             )
             .unwrap();
-        let gone = vault.put(None, Item::Host(Host { name: "to-delete".into(), ..Host::default() })).unwrap();
+        let gone = vault
+            .put(
+                None,
+                Item::Host(Host {
+                    name: "to-delete".into(),
+                    ..Host::default()
+                }),
+            )
+            .unwrap();
         vault.delete(&gone).unwrap();
         (vault, host, gone)
     }
@@ -206,7 +237,14 @@ mod tests {
         assert!(!dir.path().join("hatoba.backup.tmp").exists());
 
         let raw = std::fs::read_to_string(&path).unwrap();
-        for needle in ["backup-host-name", "backup-pass", "to-delete", PW, "\"type\"", "Cascadia"] {
+        for needle in [
+            "backup-host-name",
+            "backup-pass",
+            "to-delete",
+            PW,
+            "\"type\"",
+            "Cascadia",
+        ] {
             assert!(!raw.contains(needle), "{needle} leaked into the backup");
         }
         let file = read_backup(&path).unwrap();
@@ -214,9 +252,25 @@ mod tests {
         assert_eq!(file.items.len(), 3); // host, tombstone, settings
         let tombstone = file.items.iter().find(|i| i.id == gone).unwrap();
         assert!(tombstone.deleted && tombstone.envelope.is_none());
-        assert!(file.items.iter().find(|i| i.id == host).unwrap().envelope.is_some());
+        assert!(
+            file.items
+                .iter()
+                .find(|i| i.id == host)
+                .unwrap()
+                .envelope
+                .is_some()
+        );
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        for key in ["format", "v", "created_at", "kdf_salt", "kdf_params", "protected_vault_key", "recovery_vault_key", "items"] {
+        for key in [
+            "format",
+            "v",
+            "created_at",
+            "kdf_salt",
+            "kdf_params",
+            "protected_vault_key",
+            "recovery_vault_key",
+            "items",
+        ] {
             assert!(json.get(key).is_some(), "missing {key}");
         }
     }
@@ -229,18 +283,28 @@ mod tests {
         vault.export_backup(&path).unwrap();
 
         let mut fresh = Vault::open_in_memory().unwrap();
-        assert!(matches!(fresh.import_backup_into_new_vault(&path, "wrong"), Err(Error::WrongPassword)));
+        assert!(matches!(
+            fresh.import_backup_into_new_vault(&path, "wrong"),
+            Err(Error::WrongPassword)
+        ));
         assert!(!fresh.status().initialized);
         fresh.import_backup_into_new_vault(&path, PW).unwrap();
         assert!(fresh.is_unlocked());
         assert_eq!(fresh.get(&host).unwrap().display_name(), "backup-host-name");
         assert!(fresh.get(&gone).is_none());
         assert_ne!(fresh.device_id(), vault.device_id());
-        assert_eq!(fresh.pending_count(), 3, "imported rows are queued for upload");
+        assert_eq!(
+            fresh.pending_count(),
+            3,
+            "imported rows are queued for upload"
+        );
         // The password and recovery blobs came along.
         fresh.lock();
         fresh.unlock(PW).unwrap();
-        assert!(matches!(fresh.import_backup_into_new_vault(&path, PW), Err(Error::VaultAlreadyInitialized)));
+        assert!(matches!(
+            fresh.import_backup_into_new_vault(&path, PW),
+            Err(Error::VaultAlreadyInitialized)
+        ));
     }
 
     #[test]
@@ -252,14 +316,23 @@ mod tests {
         std::fs::write(&path, br#"{"format":"other","v":1,"created_at":0,"kdf_salt":"","kdf_params":"","protected_vault_key":"","recovery_vault_key":"","items":[]}"#).unwrap();
         assert!(matches!(read_backup(&path), Err(Error::Format(_))));
         std::fs::write(&path, br#"{"format":"hatoba-backup","v":9,"created_at":0,"kdf_salt":"","kdf_params":"","protected_vault_key":"","recovery_vault_key":"","items":[]}"#).unwrap();
-        assert!(matches!(read_backup(&path), Err(Error::UnsupportedVersion(_))));
-        assert!(matches!(read_backup(&dir.path().join("missing")), Err(Error::Io(_))));
+        assert!(matches!(
+            read_backup(&path),
+            Err(Error::UnsupportedVersion(_))
+        ));
+        assert!(matches!(
+            read_backup(&dir.path().join("missing")),
+            Err(Error::Io(_))
+        ));
     }
 
     #[test]
     fn export_requires_a_vault() {
         let vault = Vault::open_in_memory().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        assert!(matches!(vault.export_backup(&dir.path().join("b")), Err(Error::VaultNotInitialized)));
+        assert!(matches!(
+            vault.export_backup(&dir.path().join("b")),
+            Err(Error::VaultNotInitialized)
+        ));
     }
 }

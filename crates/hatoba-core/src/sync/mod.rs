@@ -37,15 +37,15 @@ mod tests;
 mod worker_tests;
 
 pub use backend::{
-    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RecoveryUpdate, RemoteDevice, RemoteItem,
-    ServerInfo, Session, SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
+    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RecoveryUpdate, RemoteDevice,
+    RemoteItem, ServerInfo, Session, SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
 };
 pub use conflict::{ConflictEntry, Resolution};
 pub use d1::D1Backend;
 pub use engine::{SyncEngine, SyncOptions, SyncReport};
 pub use flows::{
-    DeviceEntry, change_password_remote, devices, enable_sync, recover_remote, restore_from_cloud, revoke_device,
-    rotate_recovery_remote, sign_in,
+    DeviceEntry, change_password_remote, devices, enable_sync, recover_remote, restore_from_cloud,
+    revoke_device, rotate_recovery_remote, sign_in,
 };
 pub use worker::WorkerBackend;
 
@@ -101,7 +101,9 @@ pub fn save_session(store: &dyn SecretStore, session: &Session) -> Result<()> {
 /// # Errors
 /// Credential store errors.
 pub fn load_session(store: &dyn SecretStore) -> Result<Option<Session>> {
-    Ok(store.get(secret_keys::SYNC_SESSION)?.and_then(|json| serde_json::from_str(&json).ok()))
+    Ok(store
+        .get(secret_keys::SYNC_SESSION)?
+        .and_then(|json| serde_json::from_str(&json).ok()))
 }
 
 /// Forgets the saved session.
@@ -131,13 +133,21 @@ impl Backoff {
     /// 2 s growing to 5 min.
     #[must_use]
     pub const fn new() -> Self {
-        Self { base: Duration::from_secs(2), max: Duration::from_secs(300), attempt: 0 }
+        Self {
+            base: Duration::from_secs(2),
+            max: Duration::from_secs(300),
+            attempt: 0,
+        }
     }
 
     /// Custom bounds.
     #[must_use]
     pub const fn with_bounds(base: Duration, max: Duration) -> Self {
-        Self { base, max, attempt: 0 }
+        Self {
+            base,
+            max,
+            attempt: 0,
+        }
     }
 
     /// The delay before the next retry; advances the schedule.
@@ -174,8 +184,13 @@ mod backoff_tests {
     #[test]
     fn grows_exponentially_and_caps_at_five_minutes() {
         let mut b = Backoff::new();
-        let secs: Vec<f64> = (0..10).map(|_| b.next_delay_with(0.5).as_secs_f64()).collect();
-        assert_eq!(secs, [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 300.0, 300.0]);
+        let secs: Vec<f64> = (0..10)
+            .map(|_| b.next_delay_with(0.5).as_secs_f64())
+            .collect();
+        assert_eq!(
+            secs,
+            [2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 300.0, 300.0]
+        );
         assert_eq!(b.attempts(), 10);
         b.reset();
         assert_eq!(b.next_delay_with(0.5), Duration::from_secs(2));
@@ -191,7 +206,10 @@ mod backoff_tests {
                 hi.next_delay_with(0.5);
             }
             let raw = (2.0 * f64::from(1u32 << attempt)).min(300.0);
-            let (l, h) = (lo.next_delay_with(0.0).as_secs_f64(), hi.next_delay_with(1.0).as_secs_f64());
+            let (l, h) = (
+                lo.next_delay_with(0.0).as_secs_f64(),
+                hi.next_delay_with(1.0).as_secs_f64(),
+            );
             assert!(l >= raw * 0.8 - 1e-9 && l <= 300.0, "{l} vs {raw}");
             assert!(h <= 300.0 + 1e-9 && h >= l, "{h}");
         }
@@ -205,17 +223,31 @@ mod backoff_tests {
 
     #[test]
     fn sync_config_json_shape() {
-        let w = SyncConfig::Worker { url: "https://x.example".into() };
-        assert_eq!(serde_json::to_string(&w).unwrap(), r#"{"mode":"worker","url":"https://x.example"}"#);
-        let d = SyncConfig::D1 { account_id: "a".into(), database_id: "d".into() };
-        assert_eq!(serde_json::from_str::<SyncConfig>(&serde_json::to_string(&d).unwrap()).unwrap(), d);
+        let w = SyncConfig::Worker {
+            url: "https://x.example".into(),
+        };
+        assert_eq!(
+            serde_json::to_string(&w).unwrap(),
+            r#"{"mode":"worker","url":"https://x.example"}"#
+        );
+        let d = SyncConfig::D1 {
+            account_id: "a".into(),
+            database_id: "d".into(),
+        };
+        assert_eq!(
+            serde_json::from_str::<SyncConfig>(&serde_json::to_string(&d).unwrap()).unwrap(),
+            d
+        );
     }
 
     #[test]
     fn session_persistence_round_trip() {
         let store = crate::platform::MemorySecretStore::new();
         assert!(load_session(&store).unwrap().is_none());
-        let s = Session { token: zeroize::Zeroizing::new("tok".into()), expires_at: 99 };
+        let s = Session {
+            token: zeroize::Zeroizing::new("tok".into()),
+            expires_at: 99,
+        };
         save_session(&store, &s).unwrap();
         let back = load_session(&store).unwrap().unwrap();
         assert_eq!((back.token.as_str(), back.expires_at), ("tok", 99));

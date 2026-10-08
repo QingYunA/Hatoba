@@ -168,6 +168,9 @@ impl Error {
     /// Whether retrying later (with backoff) can succeed without user action.
     #[must_use]
     pub fn is_transient(&self) -> bool {
-        matches!(self, Self::Offline | Self::RateLimited { .. } | Self::Server(_))
+        matches!(
+            self,
+            Self::Offline | Self::RateLimited { .. } | Self::Server(_)
+        )
     }
 }

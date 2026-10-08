@@ -62,6 +62,12 @@ export function createTauriApi(): HatobaApi {
     hostkey_respond: (requestId, accept) => call("hostkey_respond", { requestId, accept }),
     auth_prompt_respond: (requestId, answers) => call("auth_prompt_respond", { requestId, answers }),
 
+    forwards_list: (hostId) => call("forwards_list", { hostId }),
+    forward_save: (input) => call("forward_save", { input }),
+    forward_delete: (id) => call("forward_delete", { id }),
+    forward_start: (sessionId, forwardId) => call("forward_start", { sessionId, forwardId }),
+    forward_stop: (sessionId, forwardId) => call("forward_stop", { sessionId, forwardId }),
+    forwards_active: (sessionId) => call("forwards_active", { sessionId }),
     sftp_home: (sessionId) => call("sftp_home", { sessionId }),
     sftp_list: (sessionId, path) => call("sftp_list", { sessionId, path }),
     sftp_download: (sessionId, remotePath, localPath) => call("sftp_download", { sessionId, remotePath, localPath }),

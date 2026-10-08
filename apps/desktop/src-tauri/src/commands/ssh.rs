@@ -7,7 +7,6 @@ use hatoba_ssh::{ShellEvent, ShellOptions};
 use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, State};
 use tauri_specta::Event;
-use tokio::sync::OnceCell;
 use zeroize::Zeroizing;
 
 use crate::commands::hosts::host_from_input;
@@ -122,11 +121,7 @@ pub async fn ssh_connect(
         }
     };
 
-    let live = Arc::new(LiveSession {
-        session: session.clone(),
-        shell,
-        sftp: OnceCell::new(),
-    });
+    let live = Arc::new(LiveSession::new(session.clone(), shell));
     state.ssh.insert(session_id.clone(), live.clone());
     // HOST-06: device-local, never synced.
     if let Err(e) = state.with_unlocked(|v| Ok(v.set_last_connected(&host_id, now_ms())?)) {
@@ -136,6 +131,7 @@ pub async fn ssh_connect(
     emit_state(&app, &session_id, &host_id, SessionState::Connected, |e| {
         e.latency_ms = Some(latency)
     });
+    crate::commands::forwards::start_auto(&app, &session_id, &live, &host_id).await;
 
     let (app2, sid, hid) = (app.clone(), session_id.clone(), host_id.clone());
     tauri::async_runtime::spawn(async move {
@@ -144,8 +140,7 @@ pub async fn ssh_connect(
                 ShellEvent::Data(bytes) => {
                     if channel.send(TermFrame::new(FRAME_DATA, &bytes)).is_err() {
                         // The WebView went away (reload / window closed): don't leak the session.
-                        live.shell.close().await;
-                        live.session.disconnect().await;
+                        live.close().await;
                         break;
                     }
                 }
@@ -170,7 +165,7 @@ pub async fn ssh_connect(
             }
         }
         crate::state::state(&app2).ssh.remove_if_same(&sid, &live);
-        live.session.disconnect().await;
+        live.close().await;
     });
 
     Ok(session_id)
@@ -207,8 +202,7 @@ pub async fn ssh_resize(
 #[specta::specta]
 pub async fn ssh_disconnect(state: State<'_, AppState>, session_id: String) -> AppResult<()> {
     if let Some(live) = state.ssh.take(&session_id) {
-        live.shell.close().await;
-        live.session.disconnect().await;
+        live.close().await;
     }
     Ok(())
 }

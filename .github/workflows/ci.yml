@@ -71,6 +71,8 @@ jobs:
         run: cargo test --workspace
         env:
           HATOBA_SSH_IT: "1"
+      - name: TypeScript bindings are up to date
+        run: git diff --exit-code apps/desktop/src/ipc/bindings.ts
 
   rust-windows:
     name: Rust (Windows)

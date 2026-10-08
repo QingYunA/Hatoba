@@ -84,7 +84,9 @@ impl RecoveryCode {
     /// Wraps an existing secret (used by tests and by `recover`).
     #[must_use]
     pub fn from_secret(secret: [u8; SECRET_LEN]) -> Self {
-        Self { secret: Zeroizing::new(secret) }
+        Self {
+            secret: Zeroizing::new(secret),
+        }
     }
 
     /// Parses user input. Case-insensitive; spaces and dashes are ignored; `I`/`L` read as `1`
@@ -109,7 +111,8 @@ impl RecoveryCode {
             if bits >= 8 {
                 bits -= 8;
                 // The high bits above `bits` hold one complete byte.
-                bytes[idx] = u8::try_from((acc >> bits) & 0xff).map_err(|_| Error::WrongRecoveryCode)?;
+                bytes[idx] =
+                    u8::try_from((acc >> bits) & 0xff).map_err(|_| Error::WrongRecoveryCode)?;
                 idx += 1;
                 acc &= (1 << bits) - 1;
             }
@@ -140,7 +143,9 @@ impl RecoveryCode {
         raw[..SECRET_LEN].copy_from_slice(&*self.secret);
         raw[SECRET_LEN..].copy_from_slice(&checksum(&self.secret));
         let flat = encode_base32(&raw);
-        let mut out = Zeroizing::new(String::with_capacity(CODE_CHARS + CODE_CHARS / GROUP_LEN - 1));
+        let mut out = Zeroizing::new(String::with_capacity(
+            CODE_CHARS + CODE_CHARS / GROUP_LEN - 1,
+        ));
         for (i, c) in flat.chars().enumerate() {
             if i > 0 && i % GROUP_LEN == 0 {
                 out.push('-');
@@ -213,7 +218,10 @@ mod tests {
         let groups: Vec<&str> = code.split('-').collect();
         assert_eq!(groups.len(), 8);
         assert!(groups.iter().all(|g| g.len() == 4));
-        assert!(code.chars().all(|c| c == '-' || ALPHABET.contains(&(c as u8))));
+        assert!(
+            code.chars()
+                .all(|c| c == '-' || ALPHABET.contains(&(c as u8)))
+        );
     }
 
     #[test]
@@ -221,9 +229,15 @@ mod tests {
         // secret 00 01 .. 0F followed by SHA-256(secret)[..4]; expected value computed
         // independently with a few lines of Python.
         let code = fixed();
-        assert_eq!(code.grouped().as_str(), "000G-40R4-0M30-E209-185G-R38E-1YZ4-BJS6");
+        assert_eq!(
+            code.grouped().as_str(),
+            "000G-40R4-0M30-E209-185G-R38E-1YZ4-BJS6"
+        );
         assert_eq!(code.last_group(), "BJS6");
-        assert_eq!(RecoveryCode::parse("000G-40R4-0M30-E209-185G-R38E-1YZ4-BJS6").unwrap(), code);
+        assert_eq!(
+            RecoveryCode::parse("000G-40R4-0M30-E209-185G-R38E-1YZ4-BJS6").unwrap(),
+            code
+        );
     }
 
     #[test]
@@ -263,9 +277,15 @@ mod tests {
         let shown = fixed().to_string();
         let mut chars: Vec<char> = shown.chars().collect();
         chars[0] = 'U';
-        assert!(matches!(RecoveryCode::parse(&chars.iter().collect::<String>()), Err(Error::WrongRecoveryCode)));
+        assert!(matches!(
+            RecoveryCode::parse(&chars.iter().collect::<String>()),
+            Err(Error::WrongRecoveryCode)
+        ));
         chars[0] = '!';
-        assert!(matches!(RecoveryCode::parse(&chars.iter().collect::<String>()), Err(Error::WrongRecoveryCode)));
+        assert!(matches!(
+            RecoveryCode::parse(&chars.iter().collect::<String>()),
+            Err(Error::WrongRecoveryCode)
+        ));
     }
 
     #[test]
@@ -297,7 +317,10 @@ mod tests {
                 // chance of an accidental pass is 2^-32, so none may parse back to the same code.
                 match RecoveryCode::parse(&text) {
                     Err(Error::WrongRecoveryCode) => {}
-                    Ok(other) => panic!("typo accepted as a different valid code: {:?}", other == code),
+                    Ok(other) => panic!(
+                        "typo accepted as a different valid code: {:?}",
+                        other == code
+                    ),
                     Err(e) => panic!("unexpected error {e}"),
                 }
                 checked += 1;
@@ -318,8 +341,14 @@ mod tests {
     fn derived_keys_are_distinct_and_match_vectors() {
         let code = fixed();
         let to_hex = |k: &Key32| crate::crypto::hex_encode(&**k);
-        assert_eq!(to_hex(&code.recovery_key()), "0dca153820188c14ba27d5f245b93895304e977e0d2a883c0ccec8c35d16f53d");
-        assert_eq!(to_hex(&code.recovery_auth()), "2f339a3148c9d4fbec4874321938875d31fa98c0aed7340e83d757b7dacbcf6c");
+        assert_eq!(
+            to_hex(&code.recovery_key()),
+            "0dca153820188c14ba27d5f245b93895304e977e0d2a883c0ccec8c35d16f53d"
+        );
+        assert_eq!(
+            to_hex(&code.recovery_auth()),
+            "2f339a3148c9d4fbec4874321938875d31fa98c0aed7340e83d757b7dacbcf6c"
+        );
     }
 
     #[test]

@@ -265,6 +265,41 @@ export const FRAME_DATA = 0;
 export const FRAME_CLOSED = 1;
 export const FRAME_ERROR = 2;
 
+// ───────────────────────── Port forwarding (FWD-01/02) ─────────────────────────
+
+/** A saved local (`-L`) forward. Remote / dynamic forwards are P2. */
+export interface ForwardView {
+  id: string;
+  host_id: string;
+  bind_address: string;
+  /** 0 = pick a free port. */
+  bind_port: number;
+  dest_host: string;
+  dest_port: number;
+  /** FWD-02: start whenever the host connects. */
+  auto_start: boolean;
+}
+
+export interface ForwardInput {
+  id: string | null;
+  host_id: string;
+  bind_address: string;
+  bind_port: number;
+  dest_host: string;
+  dest_port: number;
+  auto_start: boolean;
+}
+
+export type ForwardState = "running" | "stopped" | "failed";
+
+export interface ForwardStatusEvent {
+  session_id: string;
+  forward_id: string;
+  state: ForwardState;
+  local_port: number | null;
+  error: string | null;
+}
+
 // ───────────────────────── SFTP ─────────────────────────
 
 export interface FileEntry {
@@ -419,4 +454,5 @@ export interface EventMap {
   "ssh://auth-prompt": AuthPrompt;
   "ssh://state": SessionStateEvent;
   "transfer://progress": TransferProgressEvent;
+  "ssh://forward": ForwardStatusEvent;
 }

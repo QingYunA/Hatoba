@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use crate::crypto::{auth_hash, b64_encode, random_bytes, sha256_hex};
 use crate::error::{Error, Result};
 use crate::sync::backend::{
-    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RemoteDevice, RemoteItem, ServerInfo, Session,
-    SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
+    Change, DeviceLogin, KdfInfo, PullPage, PushResult, Recovered, RemoteDevice, RemoteItem,
+    ServerInfo, Session, SyncBackend, VaultInit, VaultMeta, VaultMetaUpdate,
 };
 
 pub(crate) const SETUP_TOKEN: &str = "setup-token-for-tests";
@@ -125,14 +125,26 @@ impl FakeServer {
     }
 
     /// Writes a row directly, as if another client had pushed it.
-    pub(crate) fn inject_item(&self, id: &str, envelope: Option<&str>, deleted: bool, updated_at: i64) {
+    pub(crate) fn inject_item(
+        &self,
+        id: &str,
+        envelope: Option<&str>,
+        deleted: bool,
+        updated_at: i64,
+    ) {
         let mut s = self.st();
         s.seq += 1;
         let seq = s.seq;
         let revision = s.items.get(id).map_or(1, |i| i.revision + 1);
         s.items.insert(
             id.to_owned(),
-            ServerItem { envelope: envelope.map(str::to_owned), revision, seq, deleted, updated_at },
+            ServerItem {
+                envelope: envelope.map(str::to_owned),
+                revision,
+                seq,
+                deleted,
+                updated_at,
+            },
         );
     }
 
@@ -157,15 +169,26 @@ impl FakeServer {
         if let Some(m) = &s.meta {
             out.push_str(&format!(
                 "{} {} {} {} {} {} {}\n",
-                m.kdf_salt, m.kdf_params, m.auth_hash, m.protected_vault_key, m.recovery_vault_key, m.recovery_auth_hash,
+                m.kdf_salt,
+                m.kdf_params,
+                m.auth_hash,
+                m.protected_vault_key,
+                m.recovery_vault_key,
+                m.recovery_auth_hash,
                 m.schema_version
             ));
         }
         for (id, i) in &s.items {
-            out.push_str(&format!("{id} {:?} {} {} {} {}\n", i.envelope, i.revision, i.seq, i.deleted, i.updated_at));
+            out.push_str(&format!(
+                "{id} {:?} {} {} {} {}\n",
+                i.envelope, i.revision, i.seq, i.deleted, i.updated_at
+            ));
         }
         for sess in &s.sessions {
-            out.push_str(&format!("{} {} {}\n", sess.token_hash, sess.device_id, sess.device_name));
+            out.push_str(&format!(
+                "{} {} {}\n",
+                sess.token_hash, sess.device_id, sess.device_name
+            ));
         }
         out
     }
@@ -210,16 +233,30 @@ impl FakeBackend {
     }
 
     fn check_online(&self) -> Result<()> {
-        if self.server.st().offline { Err(Error::Offline) } else { Ok(()) }
+        if self.server.st().offline {
+            Err(Error::Offline)
+        } else {
+            Ok(())
+        }
     }
 
     /// Resolves the current session to its scope, like the Worker's `requireSession`.
     fn authenticate(&self, allow_recovery: bool) -> Result<(String, Scope)> {
         self.check_online()?;
-        let token = self.session.read().unwrap().as_ref().map(|s| s.token.to_string()).ok_or(Error::Unauthorized)?;
+        let token = self
+            .session
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.token.to_string())
+            .ok_or(Error::Unauthorized)?;
         let hash = sha256_hex(token.as_bytes());
         let s = self.server.st();
-        let rec = s.sessions.iter().find(|r| r.token_hash == hash).ok_or(Error::Unauthorized)?;
+        let rec = s
+            .sessions
+            .iter()
+            .find(|r| r.token_hash == hash)
+            .ok_or(Error::Unauthorized)?;
         if rec.expires_at <= (self.clock)() {
             return Err(Error::Unauthorized);
         }
@@ -231,8 +268,14 @@ impl FakeBackend {
 
     fn new_session(&self, s: &mut State, device: &DeviceLogin, scope: Scope) -> Result<Session> {
         let token = b64_encode(&random_bytes::<32>()?).replace(['+', '/', '='], "x");
-        let expires_at = (self.clock)() + if scope == Scope::Full { 30 * 86_400_000 } else { 15 * 60_000 };
-        s.sessions.retain(|r| !(r.device_id == device.device_id && r.scope == scope));
+        let expires_at = (self.clock)()
+            + if scope == Scope::Full {
+                30 * 86_400_000
+            } else {
+                15 * 60_000
+            };
+        s.sessions
+            .retain(|r| !(r.device_id == device.device_id && r.scope == scope));
         s.sessions.push(SessionRec {
             token_hash: sha256_hex(token.as_bytes()),
             device_id: device.device_id.clone(),
@@ -241,7 +284,10 @@ impl FakeBackend {
             created_at: (self.clock)(),
             expires_at,
         });
-        let session = Session { token: zeroize::Zeroizing::new(token), expires_at };
+        let session = Session {
+            token: zeroize::Zeroizing::new(token),
+            expires_at,
+        };
         *self.session.write().unwrap() = Some(session.clone());
         Ok(session)
     }
@@ -263,14 +309,22 @@ impl SyncBackend for FakeBackend {
     async fn health(&self) -> Result<ServerInfo> {
         self.check_online()?;
         let initialized = self.server.st().meta.is_some();
-        Ok(ServerInfo { service: "hatoba-sync".into(), version: "test".into(), api: 1, initialized })
+        Ok(ServerInfo {
+            service: "hatoba-sync".into(),
+            version: "test".into(),
+            api: 1,
+            initialized,
+        })
     }
 
     async fn prelogin(&self) -> Result<KdfInfo> {
         self.check_online()?;
         let s = self.server.st();
         let m = s.meta.as_ref().ok_or(Error::RemoteNotInitialized)?;
-        Ok(KdfInfo { kdf_salt: m.kdf_salt.clone(), kdf_params: m.kdf_params.clone() })
+        Ok(KdfInfo {
+            kdf_salt: m.kdf_salt.clone(),
+            kdf_params: m.kdf_params.clone(),
+        })
     }
 
     async fn setup(&self, init: VaultInit) -> Result<()> {
@@ -311,9 +365,20 @@ impl SyncBackend for FakeBackend {
         if m.recovery_auth_hash != auth_hash(recovery_auth) {
             return Err(Error::WrongRecoveryCode);
         }
-        let (rvk, salt, params) = (m.recovery_vault_key.clone(), m.kdf_salt.clone(), m.kdf_params.clone());
+        let (rvk, salt, params) = (
+            m.recovery_vault_key.clone(),
+            m.kdf_salt.clone(),
+            m.kdf_params.clone(),
+        );
         let session = self.new_session(&mut s, device, Scope::Recovery)?;
-        Ok(Recovered { recovery_vault_key: rvk, kdf: KdfInfo { kdf_salt: salt, kdf_params: params }, session })
+        Ok(Recovered {
+            recovery_vault_key: rvk,
+            kdf: KdfInfo {
+                kdf_salt: salt,
+                kdf_params: params,
+            },
+            session,
+        })
     }
 
     async fn fetch_vault(&self) -> Result<VaultMeta> {
@@ -335,13 +400,20 @@ impl SyncBackend for FakeBackend {
         let page = {
             let mut s = self.server.st();
             s.pull_calls += 1;
-            let limit = usize::try_from(limit).unwrap_or(usize::MAX).min(s.pull_page_cap.unwrap_or(usize::MAX));
-            let mut rows: Vec<(&String, &ServerItem)> = s.items.iter().filter(|(_, i)| i.seq > since_seq).collect();
+            let limit = usize::try_from(limit)
+                .unwrap_or(usize::MAX)
+                .min(s.pull_page_cap.unwrap_or(usize::MAX));
+            let mut rows: Vec<(&String, &ServerItem)> =
+                s.items.iter().filter(|(_, i)| i.seq > since_seq).collect();
             rows.sort_by_key(|(_, i)| i.seq);
             let has_more = rows.len() > limit;
             rows.truncate(limit);
             let next_since = rows.last().map_or(since_seq, |(_, i)| i.seq);
-            PullPage { items: rows.iter().map(|(id, i)| to_remote(id, i)).collect(), next_since, has_more }
+            PullPage {
+                items: rows.iter().map(|(id, i)| to_remote(id, i)).collect(),
+                next_since,
+                has_more,
+            }
         };
         let hook = self.after_pull.lock().unwrap().take();
         if let Some(hook) = hook {
@@ -363,9 +435,16 @@ impl SyncBackend for FakeBackend {
             let mut results = Vec::new();
             for c in changes {
                 assert!(seen.insert(c.id.clone()), "duplicate id in one push");
-                assert_eq!(c.deleted, c.envelope.is_none(), "deleted <=> envelope is null");
+                assert_eq!(
+                    c.deleted,
+                    c.envelope.is_none(),
+                    "deleted <=> envelope is null"
+                );
                 if c.envelope.as_ref().is_some_and(|e| e.len() > 64 * 1024) {
-                    results.push(PushResult::Error { id: c.id, error: "too_large".into() });
+                    results.push(PushResult::Error {
+                        id: c.id,
+                        error: "too_large".into(),
+                    });
                     continue;
                 }
                 s.seq += 1; // consumed even if the write loses the race: holes are allowed
@@ -379,13 +458,29 @@ impl SyncBackend for FakeBackend {
                 if let Some(revision) = applied {
                     s.items.insert(
                         c.id.clone(),
-                        ServerItem { envelope: c.envelope, revision, seq, deleted: c.deleted, updated_at: c.updated_at },
+                        ServerItem {
+                            envelope: c.envelope,
+                            revision,
+                            seq,
+                            deleted: c.deleted,
+                            updated_at: c.updated_at,
+                        },
                     );
-                    results.push(PushResult::Ok { id: c.id, revision, seq });
+                    results.push(PushResult::Ok {
+                        id: c.id,
+                        revision,
+                        seq,
+                    });
                 } else if let Some(cur) = existing {
-                    results.push(PushResult::Conflict { server: to_remote(&c.id, &cur), id: c.id });
+                    results.push(PushResult::Conflict {
+                        server: to_remote(&c.id, &cur),
+                        id: c.id,
+                    });
                 } else {
-                    results.push(PushResult::Error { id: c.id, error: "not_found".into() });
+                    results.push(PushResult::Error {
+                        id: c.id,
+                        error: "not_found".into(),
+                    });
                 }
             }
             (results, std::mem::take(&mut s.lose_next_push_response))
@@ -413,8 +508,14 @@ impl SyncBackend for FakeBackend {
         }
         match scope {
             Scope::Full => {
-                let token_hash = self.session.read().unwrap().as_ref().map(|x| sha256_hex(x.token.as_bytes()));
-                s.sessions.retain(|r| Some(&r.token_hash) == token_hash.as_ref());
+                let token_hash = self
+                    .session
+                    .read()
+                    .unwrap()
+                    .as_ref()
+                    .map(|x| sha256_hex(x.token.as_bytes()));
+                s.sessions
+                    .retain(|r| Some(&r.token_hash) == token_hash.as_ref());
                 let _ = device_id;
             }
             Scope::Recovery => s.sessions.clear(),
@@ -441,7 +542,10 @@ impl SyncBackend for FakeBackend {
 
     async fn revoke_device(&self, device_id: &str) -> Result<()> {
         self.authenticate(false)?;
-        self.server.st().sessions.retain(|r| r.device_id != device_id);
+        self.server
+            .st()
+            .sessions
+            .retain(|r| r.device_id != device_id);
         Ok(())
     }
 
@@ -449,4 +553,3 @@ impl SyncBackend for FakeBackend {
         *self.session.write().unwrap() = session;
     }
 }
-

@@ -3,6 +3,7 @@ import type {
   AppError,
   EventMap,
   FileEntry,
+  ForwardView,
   GroupView,
   HostView,
   KeyView,
@@ -33,6 +34,8 @@ export function createMockApi(): HatobaApi {
   let prefs: LocalPrefs = loadPrefs();
   let conflicts = syncDemo === "conflict" ? [...D.CONFLICTS] : [];
   let devices = [...D.DEVICES];
+  let forwards: ForwardView[] = demo === "empty" ? [] : D.FORWARDS.map((f) => ({ ...f }));
+  const activeForwards = new Map<string, number>();
   let vaultState: VaultStatus["state"] =
     demo === "onboarding" ? "uninitialized" : demo === "locked" ? "locked" : "unlocked";
   let biometric = q.get("hello") !== "off";
@@ -385,6 +388,30 @@ export function createMockApi(): HatobaApi {
     },
     auth_prompt_respond: async () => {},
 
+    forwards_list: async (hostId) => forwards.filter((f) => f.host_id === hostId),
+    forward_save: async (input) => {
+      const f: ForwardView = { ...input, id: input.id ?? id("f"), bind_address: input.bind_address || "127.0.0.1" };
+      forwards = input.id ? forwards.map((x) => (x.id === f.id ? f : x)) : [...forwards, f];
+      touch();
+      return f;
+    },
+    forward_delete: async (fid) => {
+      forwards = forwards.filter((f) => f.id !== fid);
+      touch();
+    },
+    forward_start: async (sid, fid) => {
+      const f = forwards.find((x) => x.id === fid) ?? fail("not_found");
+      const port = f.bind_port || 49152 + Math.floor(Math.random() * 1000);
+      activeForwards.set(`${sid}/${fid}`, port);
+      emit("ssh://forward", { session_id: sid, forward_id: fid, state: "running", local_port: port, error: null });
+      return port;
+    },
+    forward_stop: async (sid, fid) => {
+      activeForwards.delete(`${sid}/${fid}`);
+      emit("ssh://forward", { session_id: sid, forward_id: fid, state: "stopped", local_port: null, error: null });
+    },
+    forwards_active: async (sid) =>
+      [...activeForwards.entries()].filter(([k]) => k.startsWith(`${sid}/`)).map(([k, port]) => [k.split("/")[1], port] as [string, number]),
     sftp_home: async () => "/srv/api",
     sftp_list: async (_sid, path) => {
       await delay(120);

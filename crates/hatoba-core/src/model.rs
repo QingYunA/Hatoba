@@ -51,7 +51,9 @@ impl HostAuth {
     /// Password authentication with the given password.
     #[must_use]
     pub fn password(password: impl Into<String>) -> Self {
-        Self::Password { password: Zeroizing::new(password.into()) }
+        Self::Password {
+            password: Zeroizing::new(password.into()),
+        }
     }
 }
 
@@ -190,7 +192,10 @@ impl fmt::Debug for SshKey {
             .field("name", &self.name)
             .field("algorithm", &self.algorithm)
             .field("private_key", &"<redacted>")
-            .field("passphrase", &self.passphrase.as_ref().map(|_| "<redacted>"))
+            .field(
+                "passphrase",
+                &self.passphrase.as_ref().map(|_| "<redacted>"),
+            )
             .field("fingerprint", &self.fingerprint)
             .field("updated_at", &self.updated_at)
             .finish_non_exhaustive()
@@ -436,37 +441,61 @@ impl Item {
     /// The host, if this is one.
     #[must_use]
     pub fn as_host(&self) -> Option<&Host> {
-        if let Self::Host(h) = self { Some(h) } else { None }
+        if let Self::Host(h) = self {
+            Some(h)
+        } else {
+            None
+        }
     }
 
     /// The group, if this is one.
     #[must_use]
     pub fn as_group(&self) -> Option<&Group> {
-        if let Self::Group(g) = self { Some(g) } else { None }
+        if let Self::Group(g) = self {
+            Some(g)
+        } else {
+            None
+        }
     }
 
     /// The key, if this is one.
     #[must_use]
     pub fn as_key(&self) -> Option<&SshKey> {
-        if let Self::Key(k) = self { Some(k) } else { None }
+        if let Self::Key(k) = self {
+            Some(k)
+        } else {
+            None
+        }
     }
 
     /// The known host, if this is one.
     #[must_use]
     pub fn as_known_host(&self) -> Option<&KnownHost> {
-        if let Self::KnownHost(k) = self { Some(k) } else { None }
+        if let Self::KnownHost(k) = self {
+            Some(k)
+        } else {
+            None
+        }
     }
 
     /// The port forward, if this is one.
     #[must_use]
     pub fn as_forward(&self) -> Option<&PortForward> {
-        if let Self::Forward(f) = self { Some(f) } else { None }
+        if let Self::Forward(f) = self {
+            Some(f)
+        } else {
+            None
+        }
     }
 
     /// The settings, if this is the settings item.
     #[must_use]
     pub fn as_settings(&self) -> Option<&Settings> {
-        if let Self::Settings(s) = self { Some(s) } else { None }
+        if let Self::Settings(s) = self {
+            Some(s)
+        } else {
+            None
+        }
     }
 
     /// Returns a copy whose name carries `suffix` (used for conflict copies). Types without a
@@ -568,8 +597,14 @@ mod tests {
     #[test]
     fn auth_variants_use_the_kind_tag() {
         let cases = [
-            (HostAuth::password("p"), json!({"kind":"password","password":"p"})),
-            (HostAuth::Key { key_id: "k".into() }, json!({"kind":"key","key_id":"k"})),
+            (
+                HostAuth::password("p"),
+                json!({"kind":"password","password":"p"}),
+            ),
+            (
+                HostAuth::Key { key_id: "k".into() },
+                json!({"kind":"key","key_id":"k"}),
+            ),
             (HostAuth::Agent, json!({"kind":"agent"})),
             (HostAuth::Ask, json!({"kind":"ask"})),
         ];
@@ -610,9 +645,10 @@ mod tests {
         assert_eq!(host.group_id, None);
 
         // Unknown enum values degrade gracefully instead of failing the whole item.
-        let item: Item =
-            serde_json::from_value(json!({"type":"settings","terminal":{"theme":"solarized","cursor_style":"beam"}}))
-                .unwrap();
+        let item: Item = serde_json::from_value(
+            json!({"type":"settings","terminal":{"theme":"solarized","cursor_style":"beam"}}),
+        )
+        .unwrap();
         let s = item.as_settings().unwrap();
         assert_eq!(s.terminal.theme, ThemeMode::System);
         assert_eq!(s.terminal.cursor_style, CursorStyle::Block);
@@ -633,10 +669,20 @@ mod tests {
         item.set_updated_at(5);
         assert_eq!(item.updated_at(), 5);
         assert_eq!(item.display_name(), "prod-api-tokyo");
-        let key = Item::Key(SshKey { name: "laptop".into(), ..SshKey::default() });
-        assert_eq!(key.with_name_suffix(" (copy)").display_name(), "laptop (copy)");
+        let key = Item::Key(SshKey {
+            name: "laptop".into(),
+            ..SshKey::default()
+        });
+        assert_eq!(
+            key.with_name_suffix(" (copy)").display_name(),
+            "laptop (copy)"
+        );
         assert!(key.is_key());
-        let kh = Item::KnownHost(KnownHost { host: "h".into(), port: 2222, ..KnownHost::default() });
+        let kh = Item::KnownHost(KnownHost {
+            host: "h".into(),
+            port: 2222,
+            ..KnownHost::default()
+        });
         assert_eq!(kh.display_name(), "h:2222");
     }
 
