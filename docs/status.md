@@ -9,6 +9,7 @@
 | `crates/hatoba-core` | 170 个单元 / 集成测试：加密固定向量（与 OpenSSL 交叉核对）、篡改检测、恢复码、保险库生命周期与节流、SQLite 明文扫描、两台设备经模拟服务端的同步与冲突场景、Worker / D1 后端的请求映射 |
 | `crates/hatoba-ssh` | 112 个测试，其中 46 个连接真实 OpenSSH `sshd`（`HATOBA_SSH_IT=1`）：密码 / 各类密钥 / 带口令密钥 / PPK、指纹校验、Shell 往返与 50 MB 吞吐、背压、SFTP、端口转发、两级 ProxyJump、ssh-agent、错误分类 |
 | `workers/sync` | 161 个 Vitest 测试，运行在本地 D1（miniflare）上：Setup Token、会话、限流、并发冲突、大小限制、改密吊销会话、恢复流程 |
+| 客户端 ↔ Worker | `crates/hatoba-core/tests/worker_live.rs`：两台设备通过 `wrangler dev` 运行的真实 Worker 同步（初始化、恢复、双向编辑、冲突、删除、设备列表、吊销）；运行后扫描本地 D1，只有密文 |
 | `apps/desktop` | TypeScript 严格模式；tauri-specta 生成绑定并与手写契约做编译期双向校验；前端单元测试；WebDriver 端到端冒烟测试（真实 Rust 后端 + 真实 sshd，见 `apps/desktop/e2e`）；各页面与设计稿逐屏对照（浅色 / 深色） |
 
 ## 安全（§4.3）
