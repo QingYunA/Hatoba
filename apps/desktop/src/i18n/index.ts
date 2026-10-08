@@ -1,0 +1,103 @@
+import { useSyncExternalStore } from "react";
+import { messages, type Locale, type MessageKey } from "./locales";
+
+export type { Locale, MessageKey };
+export const LOCALES: Locale[] = ["zh-CN", "en", "ja"];
+
+/** Picks a supported locale from the OS / WebView language list (default: system language). */
+export function detectLocale(languages: readonly string[] = navigator.languages ?? [navigator.language]): Locale {
+  for (const raw of languages) {
+    const lang = raw.toLowerCase();
+    if (lang.startsWith("zh")) return "zh-CN";
+    if (lang.startsWith("ja")) return "ja";
+    if (lang.startsWith("en")) return "en";
+  }
+  return "en";
+}
+
+let current: Locale = detectLocale();
+const listeners = new Set<() => void>();
+
+export function getLocale(): Locale {
+  return current;
+}
+
+export function setLocale(locale: Locale) {
+  if (locale === current) return;
+  current = locale;
+  document.documentElement.lang = locale;
+  listeners.forEach((l) => l());
+}
+
+export type Params = Record<string, string | number>;
+
+/**
+ * Translate `key`. `{name}` placeholders are replaced from `params`. When `params.n` is a number
+ * and a `key_one` variant exists, it is used for n === 1 (English plurals).
+ */
+export function translate(locale: Locale, key: MessageKey, params?: Params): string {
+  const table = messages[locale] as Record<string, string>;
+  let text: string | undefined;
+  if (params && typeof params.n === "number" && params.n === 1) text = table[`${key}_one`];
+  text ??= table[key] ?? (messages.en as Record<string, string>)[key] ?? key;
+  if (!params) return text;
+  return text.replace(/\{(\w+)\}/g, (m, name: string) => (name in params ? String(params[name]) : m));
+}
+
+export function t(key: MessageKey, params?: Params): string {
+  return translate(current, key, params);
+}
+
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+/** React hook: re-renders on language change (switching takes effect immediately, design §07). */
+export function useT() {
+  const locale = useSyncExternalStore(subscribe, getLocale);
+  return Object.assign((key: MessageKey, params?: Params) => translate(locale, key, params), { locale });
+}
+
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+function fmt(locale: Locale, opts: Intl.DateTimeFormatOptions) {
+  const k = locale + JSON.stringify(opts);
+  let f = dateFormatters.get(k);
+  if (!f) dateFormatters.set(k, (f = new Intl.DateTimeFormat(locale, opts)));
+  return f;
+}
+
+/** "2 min ago", "Today 09:12", "Yesterday", "Oct 5" — the design's last-connected style. */
+export function formatRelative(locale: Locale, ms: number, now = Date.now()): string {
+  const diff = Math.max(0, now - ms);
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return translate(locale, "time.justNow");
+  if (min < 60) return translate(locale, "time.minutesAgo", { n: min });
+  const d = new Date(ms);
+  const today = new Date(now);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const hm = fmt(locale, { hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  if (ms >= startOfToday) return translate(locale, "time.todayAt", { time: hm });
+  if (ms >= startOfToday - 86_400_000) return translate(locale, "time.yesterdayAt", { time: hm });
+  const sameYear = d.getFullYear() === today.getFullYear();
+  return fmt(locale, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" }).format(d);
+}
+
+/** "2026-03-14" */
+export function formatDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 10 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}

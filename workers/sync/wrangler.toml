@@ -1,0 +1,24 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "hatoba-sync"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# D1 database. Create it with `npx wrangler d1 create hatoba`, then paste the
+# printed database_id below (the all-zero value is only a placeholder).
+[[d1_databases]]
+binding = "DB"
+database_name = "hatoba"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Workers Rate Limiting binding used for /v1/setup, /v1/login and /v1/recover
+# (10 requests per 60 seconds per IP and endpoint). `namespace_id` is any
+# integer string that is unique within your Cloudflare account.
+[[ratelimits]]
+name = "AUTH_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+# The setup token is a secret and is NOT configured here:
+#   npx wrangler secret put SETUP_TOKEN
+# For `wrangler dev`, put it in .dev.vars instead (see .dev.vars.example).

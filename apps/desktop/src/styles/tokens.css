@@ -1,0 +1,155 @@
+/*
+ * Design tokens extracted from the Claude Design file `Hatoba.dc.html`
+ * (light values from the canvas root, dark values from its `DARK` table).
+ * Components only reference these variables, never raw colors.
+ */
+
+:root {
+  /* Typography (WIN-02: Segoe UI Variable / Cascadia Mono on Windows, SF on macOS) */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "Microsoft YaHei UI", "PingFang SC", "Hiragino Sans GB", "Yu Gothic UI", "Helvetica Neue",
+    Helvetica, Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono",
+    "Microsoft YaHei UI", "Yu Gothic UI", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-title: 20px;
+  --text-wizard: 19px;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-control: 7px;
+  --radius-panel: 10px;
+  --radius-window: 12px;
+  --radius-icon: 14px;
+
+  /* Sizes */
+  --sidebar-width: 228px;
+  --titlebar-height: 44px;
+  --toolbar-height: 36px;
+  --control-height: 28px;
+  --field-height: 26px;
+  --row: 40px;
+
+  /* Light palette */
+  --win: #ffffff;
+  --side: #ececf1;
+  --side-translucent: rgba(236, 236, 241, 0.6);
+  --fg: #1d1d1f;
+  --fg2: rgba(60, 60, 67, 0.75);
+  --fg3: rgba(60, 60, 67, 0.4);
+  --line: rgba(0, 0, 0, 0.075);
+  --line2: rgba(0, 0, 0, 0.12);
+  --fill: rgba(0, 0, 0, 0.045);
+  --fill2: rgba(0, 0, 0, 0.08);
+  --group: rgba(0, 0, 0, 0.025);
+  --sel: rgba(0, 0, 0, 0.075);
+  --accent: #007aff;
+  --rowsel: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accenttint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --field: #ffffff;
+  --fieldline: rgba(0, 0, 0, 0.15);
+  --btn: #ffffff;
+  --btnline: rgba(0, 0, 0, 0.13);
+  --segon: #ffffff;
+  --green: #28a745;
+  --orange: #e08600;
+  --red: #e5342b;
+  --sheet: #ffffff;
+  --winline: rgba(0, 0, 0, 0.22);
+  --shadow: 0 30px 80px rgba(20, 24, 40, 0.22), 0 6px 18px rgba(20, 24, 40, 0.1);
+  --shadow-popover: 0 0 0 0.5px var(--winline), 0 12px 32px rgba(0, 0, 0, 0.22);
+  --shadow-btn: 0 0 0 0.5px var(--btnline), 0 1px 1.5px rgba(0, 0, 0, 0.05);
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px var(--line);
+  --focus-ring: 0 0 0 1px var(--accent), 0 0 0 3.5px var(--accenttint);
+  --error-ring: 0 0 0 1px var(--red), 0 0 0 3.5px color-mix(in srgb, var(--red) 16%, transparent);
+  --scrim: rgba(0, 0, 0, 0.18);
+  --logo-bg: #16171a;
+
+  /* Terminal (always dark in the design; "match appearance" switches to the light set) */
+  --term: #121316;
+  --term-fg: #d5d8de;
+  --term-dim: #6b717c;
+  --term-dialog: #1c1d21;
+
+  /* Tag palette (oklch, from the design's TAGC table) */
+  --tag-1: oklch(0.66 0.15 30);
+  --tag-2: oklch(0.76 0.13 80);
+  --tag-3: oklch(0.6 0.13 300);
+  --tag-4: oklch(0.68 0.1 190);
+  --tag-5: oklch(0.62 0.14 255);
+  --tag-6: oklch(0.66 0.11 150);
+  --tag-7: oklch(0.66 0.01 260);
+  --tag-8: oklch(0.7 0.12 340);
+
+  /* Windows caption buttons */
+  --caption-hover: rgba(0, 0, 0, 0.06);
+  --caption-close: #c42b1c;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --win: #1e1e20;
+  --side: #2a2a2e;
+  --side-translucent: rgba(42, 42, 46, 0.58);
+  --fg: #f5f5f7;
+  --fg2: rgba(235, 235, 245, 0.64);
+  --fg3: rgba(235, 235, 245, 0.32);
+  --line: rgba(255, 255, 255, 0.075);
+  --line2: rgba(255, 255, 255, 0.12);
+  --fill: rgba(255, 255, 255, 0.07);
+  --fill2: rgba(255, 255, 255, 0.11);
+  --group: rgba(255, 255, 255, 0.035);
+  --sel: rgba(255, 255, 255, 0.1);
+  --accent: #0a84ff;
+  --rowsel: color-mix(in srgb, var(--accent) 24%, transparent);
+  --accenttint: color-mix(in srgb, var(--accent) 20%, transparent);
+  --field: rgba(255, 255, 255, 0.055);
+  --fieldline: rgba(255, 255, 255, 0.13);
+  --btn: rgba(255, 255, 255, 0.1);
+  --btnline: rgba(255, 255, 255, 0.07);
+  --segon: rgba(255, 255, 255, 0.18);
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  --sheet: #28282b;
+  --winline: rgba(255, 255, 255, 0.14);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.35);
+  --scrim: rgba(0, 0, 0, 0.4);
+  --term: #0d0e10;
+  --caption-hover: rgba(255, 255, 255, 0.08);
+
+  color-scheme: dark;
+}
+
+/* Compact list density (design "density: 紧凑") */
+:root[data-density="compact"] {
+  --row: 32px;
+}
+
+/* Mica on Windows 11 (WIN-07): let the native material show through the sidebar */
+:root[data-material="mica"] {
+  --side: var(--side-translucent);
+}
+
+/* CJK font order: Japanese UI should prefer Yu Gothic over YaHei for unified Han glyphs */
+:root:lang(ja) {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "Yu Gothic UI", "Hiragino Sans", "Microsoft YaHei UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", Menlo, "Yu Gothic UI", "Microsoft YaHei UI",
+    monospace;
+}
+
+/* macOS keeps the design's native look (P1) */
+:root[data-platform="macos"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue",
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono", monospace;
+}

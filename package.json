@@ -1,0 +1,15 @@
+{
+  "name": "hatoba",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source desktop SSH client with end-to-end encrypted sync through your own Cloudflare account",
+  "license": "MIT",
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "dev": "pnpm --filter @hatoba/desktop dev",
+    "tauri": "pnpm --filter @hatoba/desktop tauri",
+    "build": "pnpm --filter @hatoba/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

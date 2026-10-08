@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/target/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Tauri generated
+apps/desktop/src-tauri/gen/schemas/

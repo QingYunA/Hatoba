@@ -1,0 +1,106 @@
+import { create } from "zustand";
+import { api } from "@/ipc/api";
+import type { AppInfo, LocalPrefs, SyncStatus, VaultStatus } from "@/ipc/types";
+import { detectLocale, setLocale, type Locale } from "@/i18n";
+
+export type HostFilter =
+  | { kind: "all" }
+  | { kind: "favorites" }
+  | { kind: "recent" }
+  | { kind: "group"; id: string }
+  | { kind: "tag"; name: string };
+
+/** What the "home" tab shows. Session tabs are tracked in `tabs.ts`. */
+export type Page =
+  | { kind: "hosts"; filter: HostFilter }
+  | { kind: "host-edit"; hostId: string | null; groupId: string | null; back: HostFilter }
+  | { kind: "keys" }
+  | { kind: "sync" };
+
+export type Phase = "boot" | "onboarding" | "locked" | "unlocked";
+
+export const DEFAULT_PREFS: LocalPrefs = {
+  language: "system",
+  appearance: "system",
+  density: "regular",
+  right_click: "copy_paste",
+  host_probe: true,
+  confirm_multiline_paste: true,
+};
+
+interface AppState {
+  phase: Phase;
+  info: AppInfo;
+  prefs: LocalPrefs;
+  vault: VaultStatus | null;
+  sync: SyncStatus | null;
+  page: Page;
+  sidebarCollapsed: boolean;
+  settingsOpen: boolean;
+  /** Bumped to ask the hosts page to focus its search field (Ctrl+Shift+K). */
+  searchFocusTick: number;
+
+  navigate(page: Page): void;
+  setPrefs(prefs: LocalPrefs): Promise<void>;
+  refreshVault(): Promise<VaultStatus>;
+  setSync(status: SyncStatus): void;
+  setPhase(phase: Phase): void;
+  toggleSidebar(): void;
+  openSettings(open: boolean): void;
+  focusSearch(): void;
+  lock(): Promise<void>;
+}
+
+export const useApp = create<AppState>((set, get) => ({
+  phase: "boot",
+  info: { version: "0.0.0", platform: "web", mica: false },
+  prefs: DEFAULT_PREFS,
+  vault: null,
+  sync: null,
+  page: { kind: "hosts", filter: { kind: "all" } },
+  sidebarCollapsed: false,
+  settingsOpen: false,
+  searchFocusTick: 0,
+
+  navigate: (page) => set({ page }),
+  setPrefs: async (prefs) => {
+    set({ prefs });
+    applyPrefs(prefs);
+    await api.prefs_save(prefs);
+  },
+  refreshVault: async () => {
+    const vault = await api.vault_status();
+    set({ vault });
+    return vault;
+  },
+  setSync: (sync) => set({ sync }),
+  setPhase: (phase) => set({ phase }),
+  toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
+  openSettings: (settingsOpen) => set({ settingsOpen }),
+  focusSearch: () => set((s) => ({ searchFocusTick: s.searchFocusTick + 1 })),
+  lock: async () => {
+    await api.vault_lock();
+    set({ phase: "locked", settingsOpen: false });
+  },
+}));
+
+export function resolveLocale(prefs: LocalPrefs): Locale {
+  return prefs.language === "system" ? detectLocale() : prefs.language;
+}
+
+const darkQuery = typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+/** Apply theme (WIN-08: follows the system live), density and language to the document. */
+export function applyPrefs(prefs: LocalPrefs) {
+  const root = document.documentElement;
+  const dark = prefs.appearance === "dark" || (prefs.appearance === "system" && !!darkQuery?.matches);
+  root.dataset.theme = dark ? "dark" : "light";
+  root.dataset.density = prefs.density;
+  setLocale(resolveLocale(prefs));
+}
+
+darkQuery?.addEventListener("change", () => applyPrefs(useApp.getState().prefs));
+
+export function isDarkTheme(): boolean {
+  return document.documentElement.dataset.theme === "dark";
+}

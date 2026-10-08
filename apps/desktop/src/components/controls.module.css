@@ -1,0 +1,423 @@
+/* Buttons, fields and small controls, ported from the design's inline styles. */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--control-height);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--btn);
+  box-shadow: var(--shadow-btn);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  flex: none;
+}
+
+.button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--btn) 92%, var(--fg) 8%);
+}
+
+.button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--btn) 86%, var(--fg) 14%);
+}
+
+.button:disabled {
+  opacity: 0.4;
+}
+
+.button .icon {
+  font-size: 14px;
+  color: var(--fg2);
+}
+
+.primary {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 500;
+  box-shadow: none;
+  padding: 0 14px;
+}
+
+.primary .icon {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 90%, #000000 10%);
+}
+
+.primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 80%, #000000 20%);
+}
+
+.danger {
+  background: var(--red);
+  color: #ffffff;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 88%, #000000 12%);
+}
+
+.small {
+  height: var(--field-height);
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+.tiny {
+  height: 22px;
+  padding: 0 10px;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--text-sm);
+}
+
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link:disabled {
+  opacity: 0.5;
+}
+
+.linkDanger {
+  color: var(--red);
+  font-size: var(--text-md);
+}
+
+.linkMuted {
+  color: var(--fg2);
+}
+
+.iconButton {
+  width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.iconButton:disabled {
+  color: var(--fg3);
+}
+
+.iconButtonActive {
+  background: var(--fill2);
+  color: var(--accent);
+}
+
+/* Text fields */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--field-height);
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  background: var(--field);
+  box-shadow: 0 0 0 0.5px var(--fieldline);
+  min-width: 0;
+}
+
+.field:focus-within {
+  box-shadow: var(--focus-ring);
+}
+
+.fieldLarge {
+  height: var(--control-height);
+  padding: 0 9px;
+}
+
+.fieldInvalid,
+.fieldInvalid:focus-within {
+  box-shadow: var(--error-ring);
+}
+
+.field input,
+.textarea {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  outline: none;
+  font-size: inherit;
+}
+
+.field input::placeholder,
+.textarea::placeholder {
+  color: var(--fg3);
+}
+
+.fieldMono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.fieldSecret input {
+  letter-spacing: 1px;
+}
+
+.fieldAdornment {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg2);
+  font-size: 14px;
+  flex: none;
+}
+
+.fieldAdornmentButton {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--fg2);
+  font-size: 14px;
+  display: inline-flex;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 9px 11px;
+  border-radius: var(--radius-panel);
+  background: var(--field);
+  box-shadow: 0 0 0 0.5px var(--fieldline);
+  line-height: 1.55;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.textarea:focus {
+  box-shadow: var(--focus-ring);
+}
+
+/* Segmented control */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--fill);
+  justify-self: start;
+}
+
+.segment {
+  height: 22px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--fg2);
+}
+
+.segment i {
+  font-size: 13px;
+}
+
+.segmentOn {
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--segon);
+  box-shadow: var(--shadow-seg);
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  width: 32px;
+  height: 19px;
+  flex: none;
+  border: 0;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--fill2);
+  transition: background 0.15s ease;
+}
+
+.switchOn {
+  background: var(--accent);
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.switchOn .switchKnob {
+  transform: translateX(13px);
+}
+
+/* Checkbox */
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
+}
+
+.checkboxBox {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--fieldline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkboxOn .checkboxBox {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.checkboxBox i {
+  font-size: 10px;
+  color: #ffffff;
+}
+
+/* Popup button (design: button with caret-up-down) */
+.popup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--field-height);
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--btn);
+  box-shadow: var(--shadow-btn);
+  min-width: 0;
+  text-align: left;
+}
+
+.popup:disabled {
+  opacity: 0.45;
+}
+
+.popupLabel {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popupIcon {
+  font-size: 13px;
+  color: var(--fg2);
+}
+
+.popupCaret {
+  font-size: 12px;
+  color: var(--fg2);
+}
+
+.popupHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+/* Status dot */
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+/* Tags */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  font-size: 11.5px;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+
+.tagDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.spinner {
+  display: inline-block;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kbd {
+  font-size: 11px;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--fill);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg2);
+  white-space: nowrap;
+}

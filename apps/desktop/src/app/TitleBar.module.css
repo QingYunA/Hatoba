@@ -1,0 +1,222 @@
+.tabbar {
+  height: var(--titlebar-height);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 10px;
+  border-bottom: 0.5px solid var(--line);
+  background: var(--win);
+  color: var(--fg);
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg2);
+  font-size: 12.5px;
+  min-width: 0;
+  max-width: 200px;
+  flex-shrink: 1;
+}
+
+.tab:hover {
+  background: var(--fill);
+}
+
+.tabActive,
+.tabActive:hover {
+  background: var(--fill2);
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.tabIcon {
+  font-size: 15px;
+  flex: none;
+}
+
+.tabDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.tabLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  margin-right: -4px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--fg2);
+  visibility: hidden;
+  flex: none;
+}
+
+.tab:hover .tabClose,
+.tabActive .tabClose {
+  visibility: visible;
+}
+
+.tabClose:hover {
+  background: var(--fill2);
+  color: var(--fg);
+}
+
+.sep {
+  width: 0.5px;
+  height: 16px;
+  background: var(--line2);
+  margin: 0 5px;
+  flex: none;
+}
+
+.newTab {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg2);
+  font-size: 14px;
+}
+
+.newTab:hover {
+  background: var(--fill);
+}
+
+.drag {
+  flex: 1;
+  align-self: stretch;
+  min-width: 24px;
+}
+
+/* Windows caption buttons (WIN-01) */
+.caption {
+  display: flex;
+  align-self: stretch;
+  flex: none;
+}
+
+.captionButton {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+}
+
+.captionButton:hover {
+  background: var(--caption-hover);
+}
+
+.captionClose:hover {
+  background: var(--caption-close);
+  color: #ffffff;
+}
+
+.captionInactive .captionButton {
+  color: var(--fg3);
+}
+
+/* Non-Windows fallback glyphs drawn with CSS */
+.glyphMin {
+  width: 10px;
+  height: 1px;
+  background: currentColor;
+}
+
+.glyphMax {
+  width: 10px;
+  height: 10px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+}
+
+.glyphRestore {
+  position: relative;
+  width: 10px;
+  height: 10px;
+}
+
+.glyphRestore::before,
+.glyphRestore::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+}
+
+.glyphRestore::before {
+  right: 0;
+  top: 0;
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 0 1px 0 0;
+}
+
+.glyphRestore::after {
+  left: 0;
+  bottom: 0;
+  background: transparent;
+}
+
+.glyphClose {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.glyphClose::before,
+.glyphClose::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+}
+
+.glyphClose::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.glyphClose::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}

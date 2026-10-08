@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `wrangler dev` (never commit .dev.vars).
+SETUP_TOKEN=dev-only-setup-token-change-me

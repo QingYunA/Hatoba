@@ -1,0 +1,63 @@
+import { useEffect } from "react";
+import type { Platform } from "@/lib/platform";
+
+export type ShortcutAction = "search" | "newTab" | "closeTab" | "nextTab" | "prevTab" | "settings" | "lock";
+
+/**
+ * App-level shortcuts (WIN-04). On Windows/Linux every app shortcut uses Ctrl+Shift so that plain
+ * Ctrl+letter always reaches the remote shell (Ctrl+L, Ctrl+W, Ctrl+K…). Exceptions are Ctrl+Tab,
+ * Ctrl+, and Ctrl+K while focus is outside the terminal.
+ */
+export function matchShortcut(e: KeyboardEvent, platform: Platform, inTerminal: boolean): ShortcutAction | null {
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (platform === "macos") {
+    if (e.ctrlKey && key === "Tab") return e.shiftKey ? "prevTab" : "nextTab";
+    if (!e.metaKey || e.altKey || e.ctrlKey) return null;
+    if (key === "k" && !e.shiftKey) return "search";
+    if (key === "t" && !e.shiftKey) return "newTab";
+    if (key === "w" && !e.shiftKey) return "closeTab";
+    if (key === "," && !e.shiftKey) return "settings";
+    if (key === "l" && !e.shiftKey) return "lock";
+    return null;
+  }
+  if (!e.ctrlKey || e.altKey || e.metaKey) return null;
+  if (key === "Tab") return e.shiftKey ? "prevTab" : "nextTab";
+  if (key === "," && !e.shiftKey) return "settings";
+  if (e.shiftKey) {
+    // With Shift held, e.key is the shifted character; use e.code for letters.
+    switch (e.code) {
+      case "KeyK":
+        return "search";
+      case "KeyT":
+        return "newTab";
+      case "KeyW":
+        return "closeTab";
+      case "KeyL":
+        return "lock";
+    }
+    return null;
+  }
+  if (key === "k" && !inTerminal) return "search";
+  return null;
+}
+
+/** True when the event is an app shortcut, so the terminal must not consume it. */
+export function isAppShortcut(e: KeyboardEvent, platform: Platform): boolean {
+  return matchShortcut(e, platform, true) !== null;
+}
+
+export function useShortcuts(platform: Platform, handler: (action: ShortcutAction) => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const inTerminal = !!target?.closest?.(".xterm");
+      const action = matchShortcut(e, platform, inTerminal);
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handler(action);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [platform, handler]);
+}
