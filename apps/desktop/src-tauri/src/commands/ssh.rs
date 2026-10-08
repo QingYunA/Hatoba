@@ -40,7 +40,13 @@ impl IpcResponse for TermFrame {
     }
 }
 
-fn emit_state(app: &AppHandle, session_id: &str, host_id: &str, state: SessionState, extra: impl FnOnce(&mut SessionStateEvent)) {
+fn emit_state(
+    app: &AppHandle,
+    session_id: &str,
+    host_id: &str,
+    state: SessionState,
+    extra: impl FnOnce(&mut SessionStateEvent),
+) {
     let mut event = SessionStateEvent {
         session_id: session_id.to_owned(),
         host_id: host_id.to_owned(),
@@ -55,8 +61,16 @@ fn emit_state(app: &AppHandle, session_id: &str, host_id: &str, state: SessionSt
 
 fn overrides(options: &ConnectOptions) -> Overrides {
     Overrides {
-        password: options.password.clone().filter(|p| !p.is_empty()).map(Zeroizing::new),
-        passphrase: options.passphrase.clone().filter(|p| !p.is_empty()).map(Zeroizing::new),
+        password: options
+            .password
+            .clone()
+            .filter(|p| !p.is_empty())
+            .map(Zeroizing::new),
+        passphrase: options
+            .passphrase
+            .clone()
+            .filter(|p| !p.is_empty())
+            .map(Zeroizing::new),
     }
 }
 
@@ -71,17 +85,35 @@ pub async fn ssh_connect(
 ) -> AppResult<String> {
     let session_id = uuid::Uuid::now_v7().to_string();
     let cfg = state.with_unlocked(|v| {
-        let host = v.get(&host_id).and_then(Item::as_host).cloned().ok_or_else(|| AppError::not_found("host"))?;
+        let host = v
+            .get(&host_id)
+            .and_then(Item::as_host)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("host"))?;
         build_config(v, &host, Some(&host_id), Some(&overrides(&options)))
     })?;
-    emit_state(&app, &session_id, &host_id, SessionState::Connecting, |_| {});
+    emit_state(
+        &app,
+        &session_id,
+        &host_id,
+        SessionState::Connecting,
+        |_| {},
+    );
 
     let fail = |err: AppError| {
-        emit_state(&app, &session_id, &host_id, SessionState::Failed, |e| e.error = Some(err.clone()));
+        emit_state(&app, &session_id, &host_id, SessionState::Failed, |e| {
+            e.error = Some(err.clone())
+        });
         err
     };
-    let session = connect_with(&app, cfg, Some(session_id.clone())).await.map_err(fail)?;
-    let shell_opts = ShellOptions { cols: options.cols.clamp(10, 1000), rows: options.rows.clamp(2, 500), ..ShellOptions::default() };
+    let session = connect_with(&app, cfg, Some(session_id.clone()))
+        .await
+        .map_err(fail)?;
+    let shell_opts = ShellOptions {
+        cols: options.cols.clamp(10, 1000),
+        rows: options.rows.clamp(2, 500),
+        ..ShellOptions::default()
+    };
     let (shell, mut events) = match session.open_shell(shell_opts).await {
         Ok(v) => v,
         Err(e) => {
@@ -90,14 +122,20 @@ pub async fn ssh_connect(
         }
     };
 
-    let live = Arc::new(LiveSession { host_id: host_id.clone(), session: session.clone(), shell, sftp: OnceCell::new() });
+    let live = Arc::new(LiveSession {
+        session: session.clone(),
+        shell,
+        sftp: OnceCell::new(),
+    });
     state.ssh.insert(session_id.clone(), live.clone());
     // HOST-06: device-local, never synced.
     if let Err(e) = state.with_unlocked(|v| Ok(v.set_last_connected(&host_id, now_ms())?)) {
         tracing::debug!("last-connected not recorded: {}", e.detail);
     }
     let latency = session.latency_ms();
-    emit_state(&app, &session_id, &host_id, SessionState::Connected, |e| e.latency_ms = Some(latency));
+    emit_state(&app, &session_id, &host_id, SessionState::Connected, |e| {
+        e.latency_ms = Some(latency)
+    });
 
     let (app2, sid, hid) = (app.clone(), session_id.clone(), host_id.clone());
     tauri::async_runtime::spawn(async move {
@@ -111,15 +149,22 @@ pub async fn ssh_connect(
                         break;
                     }
                 }
-                ShellEvent::Closed { reason, exit_status } => {
+                ShellEvent::Closed {
+                    reason,
+                    exit_status,
+                } => {
                     let _ = channel.send(TermFrame::new(FRAME_CLOSED, reason.as_bytes()));
-                    emit_state(&app2, &sid, &hid, SessionState::Disconnected, |e| e.exit_status = exit_status);
+                    emit_state(&app2, &sid, &hid, SessionState::Disconnected, |e| {
+                        e.exit_status = exit_status
+                    });
                     break;
                 }
                 ShellEvent::Error(err) => {
                     let _ = channel.send(TermFrame::new(FRAME_ERROR, err.message.as_bytes()));
                     let err: AppError = err.into();
-                    emit_state(&app2, &sid, &hid, SessionState::Disconnected, |e| e.error = Some(err));
+                    emit_state(&app2, &sid, &hid, SessionState::Disconnected, |e| {
+                        e.error = Some(err)
+                    });
                     break;
                 }
             }
@@ -133,7 +178,11 @@ pub async fn ssh_connect(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn ssh_write(state: State<'_, AppState>, session_id: String, data: String) -> AppResult<()> {
+pub async fn ssh_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> AppResult<()> {
     let live = state.ssh.get(&session_id)?;
     live.shell.write(data.into_bytes()).await?;
     Ok(())
@@ -141,9 +190,16 @@ pub async fn ssh_write(state: State<'_, AppState>, session_id: String, data: Str
 
 #[tauri::command]
 #[specta::specta]
-pub async fn ssh_resize(state: State<'_, AppState>, session_id: String, cols: u32, rows: u32) -> AppResult<()> {
+pub async fn ssh_resize(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u32,
+    rows: u32,
+) -> AppResult<()> {
     let live = state.ssh.get(&session_id)?;
-    live.shell.resize(cols.clamp(10, 1000), rows.clamp(2, 500)).await;
+    live.shell
+        .resize(cols.clamp(10, 1000), rows.clamp(2, 500))
+        .await;
     Ok(())
 }
 
@@ -160,7 +216,11 @@ pub async fn ssh_disconnect(state: State<'_, AppState>, session_id: String) -> A
 /// "Test connection" in the host editor: connect, authenticate, verify the host key, disconnect.
 #[tauri::command]
 #[specta::specta]
-pub async fn ssh_test(app: AppHandle, state: State<'_, AppState>, input: HostInput) -> AppResult<TestResult> {
+pub async fn ssh_test(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: HostInput,
+) -> AppResult<TestResult> {
     let cfg = state.with_unlocked(|v| {
         let existing = match &input.id {
             Some(id) => v.get(id).and_then(Item::as_host).cloned(),
@@ -173,9 +233,19 @@ pub async fn ssh_test(app: AppHandle, state: State<'_, AppState>, input: HostInp
         Ok(session) => {
             let latency = session.latency_ms();
             session.disconnect().await;
-            TestResult { ok: true, latency_ms: Some(latency), host_key_verified: true, error: None }
+            TestResult {
+                ok: true,
+                latency_ms: Some(latency),
+                host_key_verified: true,
+                error: None,
+            }
         }
-        Err(e) => TestResult { ok: false, latency_ms: None, host_key_verified: false, error: Some(e) },
+        Err(e) => TestResult {
+            ok: false,
+            latency_ms: None,
+            host_key_verified: false,
+            error: Some(e),
+        },
     })
 }
 
@@ -187,6 +257,10 @@ pub fn hostkey_respond(state: State<'_, AppState>, request_id: String, accept: b
 
 #[tauri::command]
 #[specta::specta]
-pub fn auth_prompt_respond(state: State<'_, AppState>, request_id: String, answers: Option<Vec<String>>) {
+pub fn auth_prompt_respond(
+    state: State<'_, AppState>,
+    request_id: String,
+    answers: Option<Vec<String>>,
+) {
     state.ssh.answer_auth(&request_id, answers);
 }

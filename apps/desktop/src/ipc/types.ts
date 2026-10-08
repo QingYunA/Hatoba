@@ -215,7 +215,7 @@ export interface ConnectOptions {
   passphrase: string | null;
 }
 
-export type SessionState = "connecting" | "authenticating" | "connected" | "disconnected" | "failed";
+export type SessionState = "connecting" | "connected" | "disconnected" | "failed";
 
 export interface SessionStateEvent {
   session_id: string;

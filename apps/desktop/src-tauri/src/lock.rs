@@ -22,8 +22,14 @@ pub fn refresh_policy(state: &AppState) {
     let vault = state.vault();
     if vault.is_unlocked() {
         let s = vault.settings();
-        state.lock_policy.auto_lock_minutes.store(s.auto_lock_minutes, Ordering::Relaxed);
-        state.lock_policy.disconnect_on_lock.store(s.lock_disconnects_sessions, Ordering::Relaxed);
+        state
+            .lock_policy
+            .auto_lock_minutes
+            .store(s.auto_lock_minutes, Ordering::Relaxed);
+        state
+            .lock_policy
+            .disconnect_on_lock
+            .store(s.lock_disconnects_sessions, Ordering::Relaxed);
     }
 }
 

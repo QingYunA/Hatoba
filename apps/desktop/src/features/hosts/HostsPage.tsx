@@ -138,7 +138,7 @@ export function HostsPage({ filter }: { filter: HostFilter }) {
   useEffect(() => {
     if (searchTick === handledSearchTick) listRef.current?.focus({ preventScroll: true });
     // Only on mount: don't steal focus when the filter changes.
-  }, []); // eslint-disable-line
+  }, []);
 
   // HOST-10: TCP reachability of the hosts in this view, now and every 60 s.
   const probeKey = useMemo(
@@ -252,6 +252,16 @@ export function HostsPage({ filter }: { filter: HostFilter }) {
     }
   };
 
+  // SEC-08: the backend copies the saved password and clears the clipboard after 30 s.
+  const copyPassword = async (host: HostView) => {
+    try {
+      await api.host_copy_password(host.id);
+      toast(t("hosts.passwordCopied"), "success");
+    } catch (e) {
+      fail(e);
+    }
+  };
+
   const menuEntries = (host: HostView): MenuEntry[] => [
     { label: t("hosts.menu.connect"), icon: "plugs-connected", onSelect: () => connect(host.id) },
     { label: t("hosts.menu.edit"), icon: "pencil-simple", onSelect: () => editHost(host.id) },
@@ -262,6 +272,9 @@ export function HostsPage({ filter }: { filter: HostFilter }) {
       onSelect: () => void toggleFavorite(host),
     },
     { label: t("hosts.menu.copyAddress"), icon: "clipboard-text", onSelect: () => void copyAddress(host) },
+    ...(host.has_password
+      ? [{ label: t("hosts.menu.copyPassword"), icon: "password", onSelect: () => void copyPassword(host) }]
+      : []),
     { kind: "separator" },
     { label: t("hosts.menu.delete"), icon: "trash", danger: true, onSelect: () => void remove(host) },
   ];

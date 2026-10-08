@@ -63,9 +63,3 @@ export function editSessionHost(hostId: string) {
   useApp.getState().navigate({ kind: "host-edit", hostId, groupId: host.group_id, back: { kind: "all" } });
   useTabs.getState().activate("home");
 }
-
-// TEMP-DEV-HOOK (remove before finishing)
-import { api as __api } from "@/ipc/api";
-import { pushHostKeyPrompt as __hk, pushAuthPrompt as __auth } from "./prompts";
-import { useTabs as __tabs } from "@/app/tabs";
-if (import.meta.env.DEV) Object.assign(window, { __hatoba: { connectHost, api: __api, tabs: __tabs, hk: __hk, auth: __auth, askSecret, getSession } });

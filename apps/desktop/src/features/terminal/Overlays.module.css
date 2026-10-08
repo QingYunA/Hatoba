@@ -1,5 +1,6 @@
 .connecting {
   position: absolute;
+  z-index: 2;
   inset: 0;
   display: flex;
   align-items: center;
@@ -23,6 +24,7 @@
 /* The error card and banner are dark in both app themes, like the design's terminal. */
 .scrim {
   position: absolute;
+  z-index: 2;
   inset: 0;
   display: flex;
   align-items: center;
@@ -137,6 +139,7 @@
 
 .banner {
   position: absolute;
+  z-index: 2;
   left: 14px;
   right: 14px;
   bottom: 14px;

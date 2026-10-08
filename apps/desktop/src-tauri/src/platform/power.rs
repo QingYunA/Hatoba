@@ -42,10 +42,16 @@ mod windows_impl {
     use windows::Win32::UI::WindowsAndMessaging::{DEVICE_NOTIFY_CALLBACK, PBT_APMSUSPEND};
 
     static SENDER: OnceLock<UnboundedSender<()>> = OnceLock::new();
-    static mut PARAMS: DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS =
-        DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS { Callback: Some(callback), Context: std::ptr::null_mut() };
+    static mut PARAMS: DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS = DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS {
+        Callback: Some(callback),
+        Context: std::ptr::null_mut(),
+    };
 
-    unsafe extern "system" fn callback(_ctx: *const c_void, kind: u32, _setting: *const c_void) -> u32 {
+    unsafe extern "system" fn callback(
+        _ctx: *const c_void,
+        kind: u32,
+        _setting: *const c_void,
+    ) -> u32 {
         if kind == PBT_APMSUSPEND
             && let Some(tx) = SENDER.get()
         {

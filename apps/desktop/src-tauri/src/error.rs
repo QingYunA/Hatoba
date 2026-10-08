@@ -62,7 +62,7 @@ pub enum KeyParseErrorKind {
 pub struct AppError {
     pub code: ErrorCode,
     pub detail: String,
-    pub retry_at: Option<f64>,
+    pub retry_at: Option<i64>,
     pub field: Option<String>,
     pub ssh_kind: Option<SshErrorKind>,
     pub key_kind: Option<KeyParseErrorKind>,
@@ -72,7 +72,14 @@ pub type AppResult<T> = Result<T, AppError>;
 
 impl AppError {
     pub fn new(code: ErrorCode, detail: impl Into<String>) -> Self {
-        Self { code, detail: detail.into(), retry_at: None, field: None, ssh_kind: None, key_kind: None }
+        Self {
+            code,
+            detail: detail.into(),
+            retry_at: None,
+            field: None,
+            ssh_kind: None,
+            key_kind: None,
+        }
     }
 
     pub fn locked() -> Self {
@@ -84,7 +91,10 @@ impl AppError {
     }
 
     pub fn invalid(field: &str, detail: impl Into<String>) -> Self {
-        Self { field: Some(field.to_owned()), ..Self::new(ErrorCode::InvalidInput, detail) }
+        Self {
+            field: Some(field.to_owned()),
+            ..Self::new(ErrorCode::InvalidInput, detail)
+        }
     }
 
     pub fn internal(detail: impl Into<String>) -> Self {
@@ -96,11 +106,17 @@ impl AppError {
     }
 
     pub fn ssh(kind: SshErrorKind, detail: impl Into<String>) -> Self {
-        Self { ssh_kind: Some(kind), ..Self::new(ErrorCode::Ssh, detail) }
+        Self {
+            ssh_kind: Some(kind),
+            ..Self::new(ErrorCode::Ssh, detail)
+        }
     }
 
     pub fn key(kind: KeyParseErrorKind, detail: impl Into<String>) -> Self {
-        Self { key_kind: Some(kind), ..Self::new(ErrorCode::KeyParse, detail) }
+        Self {
+            key_kind: Some(kind),
+            ..Self::new(ErrorCode::KeyParse, detail)
+        }
     }
 }
 
@@ -126,21 +142,26 @@ impl From<hatoba_core::Error> for AppError {
             E::VaultAlreadyInitialized => Self::new(ErrorCode::AlreadyInitialized, detail),
             E::WrongPassword => Self::new(ErrorCode::WrongPassword, detail),
             E::WrongRecoveryCode => Self::new(ErrorCode::WrongRecoveryCode, detail),
-            E::Throttled { retry_at } => {
-                Self { retry_at: Some(retry_at as f64), ..Self::new(ErrorCode::Throttled, detail) }
-            }
+            E::Throttled { retry_at } => Self {
+                retry_at: Some(retry_at),
+                ..Self::new(ErrorCode::Throttled, detail)
+            },
             E::ItemNotFound(_) => Self::new(ErrorCode::NotFound, detail),
             E::InvalidItem(_) => Self::new(ErrorCode::InvalidInput, detail),
             E::EmptyPassword => Self::invalid("password", detail),
             E::Io(_) => Self::new(ErrorCode::Io, detail),
             E::Offline | E::RateLimited { .. } => Self::new(ErrorCode::SyncOffline, detail),
-            E::Unauthorized | E::InvalidSetupToken | E::D1Permission => Self::new(ErrorCode::SyncAuth, detail),
+            E::Unauthorized | E::InvalidSetupToken | E::D1Permission => {
+                Self::new(ErrorCode::SyncAuth, detail)
+            }
             E::RemoteNotInitialized => Self::new(ErrorCode::RemoteNotInitialized, detail),
             E::RemoteInitialized => Self::new(ErrorCode::RemoteInitialized, detail),
             E::InvalidUrl(_) => Self::invalid("url", detail),
-            E::SyncNotConfigured | E::Server(_) | E::Protocol(_) | E::Unsupported | E::VaultMismatch => {
-                Self::new(ErrorCode::Sync, detail)
-            }
+            E::SyncNotConfigured
+            | E::Server(_)
+            | E::Protocol(_)
+            | E::Unsupported
+            | E::VaultMismatch => Self::new(ErrorCode::Sync, detail),
             _ => Self::internal(detail),
         }
     }
@@ -170,7 +191,10 @@ impl From<hatoba_ssh::SshError> for AppError {
             SshErrorKind::Cancelled => ErrorCode::Cancelled,
             _ => ErrorCode::Ssh,
         };
-        Self { ssh_kind: Some(kind), ..Self::new(code, e.message) }
+        Self {
+            ssh_kind: Some(kind),
+            ..Self::new(code, e.message)
+        }
     }
 }
 

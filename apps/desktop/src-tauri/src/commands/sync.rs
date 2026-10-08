@@ -6,13 +6,14 @@ use std::time::Instant;
 use hatoba_core::model::{HostAuth, Item};
 use hatoba_core::platform::{SecretStore, secret_keys};
 use hatoba_core::sync::{
-    ConflictEntry, D1Backend, Resolution, SyncBackend, SyncConfig, WorkerBackend, clear_session, d1, flows, save_session,
+    ConflictEntry, D1Backend, Resolution, SyncBackend, SyncConfig, WorkerBackend, clear_session,
+    d1, flows, save_session,
 };
 use tauri::{AppHandle, State};
 
 use crate::dto::{
-    ConflictAction, ConflictField, ConflictResolution, ConflictView, D1Database, DeviceView, ItemType, SyncConfigInput,
-    SyncStatus, SyncTestResult,
+    ConflictAction, ConflictField, ConflictResolution, ConflictView, D1Database, DeviceView,
+    ItemType, SyncConfigInput, SyncStatus, SyncTestResult,
 };
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::state::AppState;
@@ -20,29 +21,50 @@ use crate::sync::{self, Trigger, device_info};
 
 /// Turns the wizard input into a config + backend. The D1 API token goes to the credential store
 /// only once the setup succeeds.
-pub(crate) fn backend_from_input(input: &SyncConfigInput) -> AppResult<(SyncConfig, Arc<dyn SyncBackend>)> {
+pub(crate) fn backend_from_input(
+    input: &SyncConfigInput,
+) -> AppResult<(SyncConfig, Arc<dyn SyncBackend>)> {
     Ok(match input {
         SyncConfigInput::Worker { url, .. } => {
             let backend = WorkerBackend::new(url)?;
-            (SyncConfig::Worker { url: backend.base_url().to_owned() }, Arc::new(backend))
+            (
+                SyncConfig::Worker {
+                    url: backend.base_url().to_owned(),
+                },
+                Arc::new(backend),
+            )
         }
-        SyncConfigInput::D1 { account_id, database_id, api_token } => {
+        SyncConfigInput::D1 {
+            account_id,
+            database_id,
+            api_token,
+        } => {
             if database_id.trim().is_empty() {
                 return Err(AppError::invalid("database_id", "choose a database"));
             }
             let backend = D1Backend::new(account_id.trim(), database_id.trim(), api_token.trim())?;
             (
-                SyncConfig::D1 { account_id: account_id.trim().to_owned(), database_id: database_id.trim().to_owned() },
+                SyncConfig::D1 {
+                    account_id: account_id.trim().to_owned(),
+                    database_id: database_id.trim().to_owned(),
+                },
                 Arc::new(backend),
             )
         }
     })
 }
 
-pub(crate) fn persist(state: &AppState, config: &SyncConfig, input: &SyncConfigInput, session: &hatoba_core::sync::Session) -> AppResult<()> {
+pub(crate) fn persist(
+    state: &AppState,
+    config: &SyncConfig,
+    input: &SyncConfigInput,
+    session: &hatoba_core::sync::Session,
+) -> AppResult<()> {
     save_session(state.secrets.as_ref(), session)?;
     if let SyncConfigInput::D1 { api_token, .. } = input {
-        state.secrets.set(secret_keys::D1_API_TOKEN, api_token.trim())?;
+        state
+            .secrets
+            .set(secret_keys::D1_API_TOKEN, api_token.trim())?;
     }
     state.vault().set_sync_config(Some(config))?;
     Ok(())
@@ -61,20 +83,39 @@ pub async fn sync_test(config: SyncConfigInput) -> AppResult<SyncTestResult> {
     let started = Instant::now();
     let result = match &config {
         SyncConfigInput::Worker { url, .. } => match WorkerBackend::new(url) {
-            Ok(backend) => backend.health().await.map(|info| (info.initialized, Some(info.version), None)),
+            Ok(backend) => backend
+                .health()
+                .await
+                .map(|info| (info.initialized, Some(info.version), None)),
             Err(e) => Err(e),
         },
-        SyncConfigInput::D1 { account_id, database_id, api_token } => async {
-            let databases = d1::list_databases(account_id.trim(), api_token.trim()).await?;
-            let initialized = if database_id.trim().is_empty() {
-                false
-            } else {
-                D1Backend::new(account_id.trim(), database_id.trim(), api_token.trim())?.health().await?.initialized
-            };
-            let list = databases.into_iter().map(|d| D1Database { id: d.id, name: d.name, region: d.region }).collect();
-            Ok((initialized, None, Some(list)))
+        SyncConfigInput::D1 {
+            account_id,
+            database_id,
+            api_token,
+        } => {
+            async {
+                let databases = d1::list_databases(account_id.trim(), api_token.trim()).await?;
+                let initialized = if database_id.trim().is_empty() {
+                    false
+                } else {
+                    D1Backend::new(account_id.trim(), database_id.trim(), api_token.trim())?
+                        .health()
+                        .await?
+                        .initialized
+                };
+                let list = databases
+                    .into_iter()
+                    .map(|d| D1Database {
+                        id: d.id,
+                        name: d.name,
+                        region: d.region,
+                    })
+                    .collect();
+                Ok((initialized, None, Some(list)))
+            }
+            .await
         }
-        .await,
     };
     Ok(match result {
         Ok((initialized, version, databases)) => SyncTestResult {
@@ -85,20 +126,42 @@ pub async fn sync_test(config: SyncConfigInput) -> AppResult<SyncTestResult> {
             databases,
             error: None,
         },
-        Err(e) => SyncTestResult { ok: false, initialized: false, version: None, latency_ms: None, databases: None, error: Some(e.into()) },
+        Err(e) => SyncTestResult {
+            ok: false,
+            initialized: false,
+            version: None,
+            latency_ms: None,
+            databases: None,
+            error: Some(e.into()),
+        },
     })
 }
 
 /// Flow A (§6.6): initialise the remote with this vault, sign in and push everything.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_configure(app: AppHandle, state: State<'_, AppState>, config: SyncConfigInput, password: String) -> AppResult<()> {
+pub async fn sync_configure(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: SyncConfigInput,
+    password: String,
+) -> AppResult<()> {
     let (cfg, backend) = backend_from_input(&config)?;
     let setup_token = match &config {
-        SyncConfigInput::Worker { setup_token, .. } => setup_token.as_deref().map(str::trim).filter(|t| !t.is_empty()),
+        SyncConfigInput::Worker { setup_token, .. } => setup_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty()),
         SyncConfigInput::D1 { .. } => None,
     };
-    let session = flows::enable_sync(&state.vault, backend.as_ref(), &password, setup_token, device_info()).await?;
+    let session = flows::enable_sync(
+        &state.vault,
+        backend.as_ref(),
+        &password,
+        setup_token,
+        device_info(),
+    )
+    .await?;
     persist(&state, &cfg, &config, &session)?;
     state.sync.set_backend(Some(backend));
     sync::emit_status(&app);
@@ -115,8 +178,15 @@ pub async fn sync_now(app: AppHandle) -> AppResult<()> {
 /// Re-authenticate after "认证失效" (session expired or revoked).
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_login(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<()> {
-    let config = state.vault().sync_config()?.ok_or_else(|| AppError::new(ErrorCode::Sync, "sync is not configured"))?;
+pub async fn sync_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<()> {
+    let config = state
+        .vault()
+        .sync_config()?
+        .ok_or_else(|| AppError::new(ErrorCode::Sync, "sync is not configured"))?;
     let backend = match state.sync.backend() {
         Some(b) => b,
         None => sync::backend_for(&config, state.secrets.as_ref())?,
@@ -160,11 +230,13 @@ pub async fn sync_devices(state: State<'_, AppState>) -> AppResult<Vec<DeviceVie
     Ok(devices
         .into_iter()
         .map(|d| DeviceView {
-            name: d.name.unwrap_or_else(|| d.device_id.chars().take(8).collect()),
+            name: d
+                .name
+                .unwrap_or_else(|| d.device_id.chars().take(8).collect()),
             platform: d.platform.unwrap_or_default(),
             device_id: d.device_id,
-            created_at: d.created_at as f64,
-            last_seen: d.last_seen as f64,
+            created_at: d.created_at,
+            last_seen: d.last_seen,
             current: d.current,
         })
         .collect())
@@ -172,7 +244,11 @@ pub async fn sync_devices(state: State<'_, AppState>) -> AppResult<Vec<DeviceVie
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_revoke_device(app: AppHandle, state: State<'_, AppState>, device_id: String) -> AppResult<()> {
+pub async fn sync_revoke_device(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    device_id: String,
+) -> AppResult<()> {
     let backend = state.sync.require_backend()?;
     let current = state.vault().device_id() == device_id;
     flows::revoke_device(backend.as_ref(), &device_id).await?;
@@ -214,12 +290,21 @@ fn summary(item: &Item, hosts: &dyn Fn(&str) -> Option<String>) -> Vec<(&'static
                 }
                 .to_owned(),
             ),
-            ("jump_host", h.jump_host_id.as_deref().and_then(hosts).unwrap_or_default()),
+            (
+                "jump_host",
+                h.jump_host_id
+                    .as_deref()
+                    .and_then(hosts)
+                    .unwrap_or_default(),
+            ),
             ("tags", h.tags.join(", ")),
             ("note", h.note.clone()),
         ],
         Item::Group(g) => vec![("name", g.name.clone())],
-        Item::Key(k) => vec![("name", k.name.clone()), ("fingerprint", k.fingerprint.clone())],
+        Item::Key(k) => vec![
+            ("name", k.name.clone()),
+            ("fingerprint", k.fingerprint.clone()),
+        ],
         Item::KnownHost(k) => vec![("fingerprint", k.fingerprint.clone())],
         Item::Forward(f) => vec![("bind_port", f.bind_port.to_string())],
         Item::Snippet(s) => vec![("name", s.name.clone())],
@@ -228,25 +313,54 @@ fn summary(item: &Item, hosts: &dyn Fn(&str) -> Option<String>) -> Vec<(&'static
 }
 
 fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> ConflictView {
-    let local = c.local.as_ref().map(|i| summary(i, hosts)).unwrap_or_default();
-    let remote = c.remote.as_ref().map(|i| summary(i, hosts)).unwrap_or_default();
+    let local = c
+        .local
+        .as_ref()
+        .map(|i| summary(i, hosts))
+        .unwrap_or_default();
+    let remote = c
+        .remote
+        .as_ref()
+        .map(|i| summary(i, hosts))
+        .unwrap_or_default();
     let mut fields: Vec<ConflictField> = Vec::new();
     if c.local_deleted != c.remote_deleted {
         let state = |deleted: bool| Some(if deleted { "deleted" } else { "modified" }.to_owned());
-        fields.push(ConflictField { field: "state".into(), local: state(c.local_deleted), remote: state(c.remote_deleted) });
+        fields.push(ConflictField {
+            field: "state".into(),
+            local: state(c.local_deleted),
+            remote: state(c.remote_deleted),
+        });
     }
     let keys: Vec<&str> = local.iter().chain(remote.iter()).map(|(k, _)| *k).collect();
     let mut seen = std::collections::HashSet::new();
     for key in keys.into_iter().filter(|k| seen.insert(*k)) {
-        let l = local.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
-        let r = remote.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
+        let l = local
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty());
+        let r = remote
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty());
         if l != r {
-            fields.push(ConflictField { field: key.to_owned(), local: l, remote: r });
+            fields.push(ConflictField {
+                field: key.to_owned(),
+                local: l,
+                remote: r,
+            });
         }
     }
-    let name = c.local.as_ref().or(c.remote.as_ref()).map(Item::display_name).unwrap_or_else(|| c.item_id.clone());
+    let name = c
+        .local
+        .as_ref()
+        .or(c.remote.as_ref())
+        .map(Item::display_name)
+        .unwrap_or_else(|| c.item_id.clone());
     ConflictView {
-        id: c.id as f64,
+        id: c.id,
         item_id: c.item_id.clone(),
         item_type: item_type(c.local.as_ref().or(c.remote.as_ref())),
         item_name: name,
@@ -255,14 +369,16 @@ fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> C
             Resolution::RemoteWins if c.local_deleted => ConflictResolution::ModifiedWon,
             Resolution::LocalWins => ConflictResolution::LocalWon,
             Resolution::RemoteWins => ConflictResolution::RemoteWon,
-            Resolution::LocalWinsRemoteCopied | Resolution::RemoteWinsLocalCopied => ConflictResolution::KeptBoth,
+            Resolution::LocalWinsRemoteCopied | Resolution::RemoteWinsLocalCopied => {
+                ConflictResolution::KeptBoth
+            }
         },
-        local_updated_at: c.local_updated_at.map(|v| v as f64),
-        remote_updated_at: c.remote_updated_at.map(|v| v as f64),
+        local_updated_at: c.local_updated_at,
+        remote_updated_at: c.remote_updated_at,
         local_deleted: c.local_deleted,
         remote_deleted: c.remote_deleted,
         fields,
-        created_at: c.created_at as f64,
+        created_at: c.created_at,
     }
 }
 
@@ -271,16 +387,24 @@ fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> C
 #[specta::specta]
 pub fn sync_conflicts(state: State<'_, AppState>) -> AppResult<Vec<ConflictView>> {
     state.with_unlocked(|v| {
-        let names: std::collections::HashMap<String, String> = v.hosts().into_iter().map(|(id, h)| (id, h.name)).collect();
+        let names: std::collections::HashMap<String, String> =
+            v.hosts().into_iter().map(|(id, h)| (id, h.name)).collect();
         let lookup = |id: &str| names.get(id).cloned();
-        Ok(v.conflicts(true)?.iter().map(|c| conflict_view(c, &lookup)).collect())
+        Ok(v.conflicts(true)?
+            .iter()
+            .map(|c| conflict_view(c, &lookup))
+            .collect())
     })
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn sync_conflict_resolve(app: AppHandle, state: State<'_, AppState>, id: f64, action: ConflictAction) -> AppResult<()> {
-    let id = id as i64;
+pub fn sync_conflict_resolve(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+    action: ConflictAction,
+) -> AppResult<()> {
     state.with_unlocked(|v| {
         if action == ConflictAction::Restore {
             v.restore_conflict_loser(id)?;

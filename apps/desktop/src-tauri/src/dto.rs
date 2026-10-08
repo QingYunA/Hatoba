@@ -22,7 +22,7 @@ pub enum VaultState {
 pub struct VaultStatus {
     pub state: VaultState,
     pub failed_attempts: u32,
-    pub retry_at: Option<f64>,
+    pub retry_at: Option<i64>,
     pub sync_kind: SyncKind,
     pub biometric_available: bool,
     pub biometric_enabled: bool,
@@ -54,8 +54,8 @@ pub struct HostView {
     pub favorite: bool,
     pub jump_host_id: Option<String>,
     pub note: String,
-    pub updated_at: f64,
-    pub last_connected_at: Option<f64>,
+    pub updated_at: i64,
+    pub last_connected_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -143,8 +143,8 @@ pub struct KeyView {
     pub fingerprint: String,
     pub comment: String,
     pub has_passphrase: bool,
-    pub created_at: f64,
-    pub updated_at: f64,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub used_by: Vec<String>,
 }
 
@@ -186,7 +186,6 @@ pub struct ConnectOptions {
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     Connecting,
-    Authenticating,
     Connected,
     Disconnected,
     Failed,
@@ -256,8 +255,8 @@ pub struct FileEntry {
     pub path: String,
     pub is_dir: bool,
     pub is_symlink: bool,
-    pub size: f64,
-    pub modified: Option<f64>,
+    pub size: u64,
+    pub modified: Option<i64>,
     pub permissions: String,
 }
 
@@ -284,9 +283,9 @@ pub struct TransferProgressEvent {
     pub session_id: String,
     pub direction: TransferDirection,
     pub name: String,
-    pub bytes: f64,
-    pub total: f64,
-    pub bytes_per_sec: f64,
+    pub bytes: u64,
+    pub total: u64,
+    pub bytes_per_sec: u64,
     pub state: TransferState,
     pub error: Option<String>,
 }
@@ -326,7 +325,7 @@ pub struct SyncStatus {
     pub endpoint: Option<String>,
     pub database: Option<String>,
     pub state: SyncState,
-    pub last_synced_at: Option<f64>,
+    pub last_synced_at: Option<i64>,
     pub pending: u32,
     pub conflicts: u32,
     pub auto_sync: bool,
@@ -370,8 +369,8 @@ pub struct DeviceView {
     pub device_id: String,
     pub name: String,
     pub platform: String,
-    pub created_at: f64,
-    pub last_seen: f64,
+    pub created_at: i64,
+    pub last_seen: i64,
     pub current: bool,
 }
 
@@ -405,17 +404,17 @@ pub enum ItemType {
 
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct ConflictView {
-    pub id: f64,
+    pub id: i64,
     pub item_id: String,
     pub item_type: ItemType,
     pub item_name: String,
     pub resolution: ConflictResolution,
-    pub local_updated_at: Option<f64>,
-    pub remote_updated_at: Option<f64>,
+    pub local_updated_at: Option<i64>,
+    pub remote_updated_at: Option<i64>,
     pub local_deleted: bool,
     pub remote_deleted: bool,
     pub fields: Vec<ConflictField>,
-    pub created_at: f64,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Type, PartialEq, Eq)]
@@ -427,12 +426,28 @@ pub enum ConflictAction {
 
 // ───────────────────────── Settings ─────────────────────────
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeChoice {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorChoice {
+    Block,
+    Bar,
+    Underline,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct TerminalSettings {
     pub font_family: String,
     pub font_size: u32,
-    pub theme: String,
-    pub cursor_style: String,
+    pub theme: ThemeChoice,
+    pub cursor_style: CursorChoice,
     pub scrollback: u32,
 }
 
@@ -443,13 +458,47 @@ pub struct SettingsView {
     pub lock_disconnects_sessions: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub enum Language {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "ja")]
+    Ja,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Appearance {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Density {
+    Regular,
+    Compact,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RightClick {
+    CopyPaste,
+    Menu,
+}
+
+/// Device-local UI preferences (readable while locked; never synced).
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(default)]
 pub struct LocalPrefs {
-    pub language: String,
-    pub appearance: String,
-    pub density: String,
-    pub right_click: String,
+    pub language: Language,
+    pub appearance: Appearance,
+    pub density: Density,
+    pub right_click: RightClick,
     pub host_probe: bool,
     pub confirm_multiline_paste: bool,
 }
@@ -457,20 +506,52 @@ pub struct LocalPrefs {
 impl Default for LocalPrefs {
     fn default() -> Self {
         Self {
-            language: "system".into(),
-            appearance: "system".into(),
-            density: "regular".into(),
-            right_click: "copy_paste".into(),
+            language: Language::System,
+            appearance: Appearance::System,
+            density: Density::Regular,
+            right_click: RightClick::CopyPaste,
             host_probe: true,
             confirm_multiline_paste: true,
         }
     }
 }
 
+impl LocalPrefs {
+    /// Reads stored prefs leniently: missing or unknown values fall back to the defaults, so
+    /// prefs written by another app version never fail to load.
+    pub fn from_stored(json: &str) -> Self {
+        let mut merged = serde_json::to_value(Self::default()).unwrap_or_default();
+        if let (Some(base), Ok(serde_json::Value::Object(stored))) = (
+            merged.as_object_mut(),
+            serde_json::from_str::<serde_json::Value>(json),
+        ) {
+            for (key, value) in stored {
+                if base.contains_key(&key) {
+                    let mut candidate = base.clone();
+                    candidate.insert(key.clone(), value.clone());
+                    if serde_json::from_value::<Self>(serde_json::Value::Object(candidate)).is_ok()
+                    {
+                        base.insert(key, value);
+                    }
+                }
+            }
+        }
+        serde_json::from_value(merged).unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Platform {
+    Windows,
+    Macos,
+    Linux,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct AppInfo {
     pub version: String,
-    pub platform: String,
+    pub platform: Platform,
     pub mica: bool,
 }
 

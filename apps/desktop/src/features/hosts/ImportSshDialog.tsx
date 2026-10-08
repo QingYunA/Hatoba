@@ -33,7 +33,7 @@ export function ImportSshDialog({ onClose }: { onClose: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []); // eslint-disable-line
+  }, []);
 
   const toggle = (alias: string, on: boolean) =>
     setPicked((prev) => {

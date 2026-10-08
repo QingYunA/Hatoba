@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use hatoba_core::model::{Host, HostAuth, Item, KnownHost};
 use hatoba_core::vault::Vault;
 use hatoba_ssh::{
-    AuthMethod, ConnectConfig, HostKeyInfo, HostKeyVerifier, JumpHop, KeyboardInteractive, PromptRequest, SftpClient,
-    ShellHandle, SshSession,
+    AuthMethod, ConnectConfig, HostKeyInfo, HostKeyVerifier, JumpHop, KeyboardInteractive,
+    PromptRequest, SftpClient, ShellHandle, SshSession,
 };
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -26,7 +26,6 @@ use crate::sync;
 const PROMPT_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub struct LiveSession {
-    pub host_id: String,
     pub session: SshSession,
     pub shell: ShellHandle,
     pub sftp: OnceCell<SftpClient>,
@@ -50,7 +49,10 @@ impl SshManager {
     }
 
     pub fn get(&self, id: &str) -> AppResult<Arc<LiveSession>> {
-        lock(&self.sessions).get(id).cloned().ok_or_else(|| AppError::not_found("session"))
+        lock(&self.sessions)
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("session"))
     }
 
     /// Removes the session only if it is still the given instance (a reconnect may have replaced it).
@@ -63,10 +65,6 @@ impl SshManager {
 
     pub fn take(&self, id: &str) -> Option<Arc<LiveSession>> {
         lock(&self.sessions).remove(id)
-    }
-
-    pub fn count(&self) -> usize {
-        lock(&self.sessions).len()
     }
 
     /// SEC-03 "lock disconnects sessions".
@@ -112,25 +110,48 @@ pub struct Overrides {
     pub passphrase: Option<Zeroizing<String>>,
 }
 
-fn auth_method(vault: &Vault, host: &Host, overrides: Option<&Overrides>, hop: bool) -> AppResult<AuthMethod> {
+fn auth_method(
+    vault: &Vault,
+    host: &Host,
+    overrides: Option<&Overrides>,
+    hop: bool,
+) -> AppResult<AuthMethod> {
     Ok(match &host.auth {
-        HostAuth::Password { password } if !password.is_empty() => AuthMethod::Password(password.clone()),
-        HostAuth::Password { .. } | HostAuth::Ask => match overrides.and_then(|o| o.password.clone()) {
-            Some(pw) if !hop => AuthMethod::Password(pw),
-            _ if hop => {
-                return Err(AppError::invalid(
-                    "jump_host_id",
-                    format!("jump host {} needs a saved password or key", host.name),
-                ));
+        HostAuth::Password { password } if !password.is_empty() => {
+            AuthMethod::Password(password.clone())
+        }
+        HostAuth::Password { .. } | HostAuth::Ask => {
+            match overrides.and_then(|o| o.password.clone()) {
+                Some(pw) if !hop => AuthMethod::Password(pw),
+                _ if hop => {
+                    return Err(AppError::invalid(
+                        "jump_host_id",
+                        format!("jump host {} needs a saved password or key", host.name),
+                    ));
+                }
+                _ => {
+                    return Err(AppError::invalid(
+                        "password",
+                        "a password is required for this host",
+                    ));
+                }
             }
-            _ => return Err(AppError::invalid("password", "a password is required for this host")),
-        },
+        }
         HostAuth::Key { key_id } => {
             let key = vault.get(key_id).and_then(Item::as_key).ok_or_else(|| {
-                AppError::invalid("key_id", format!("the key used by {} no longer exists", host.name))
+                AppError::invalid(
+                    "key_id",
+                    format!("the key used by {} no longer exists", host.name),
+                )
             })?;
-            let passphrase = overrides.and_then(|o| o.passphrase.clone()).filter(|_| !hop).or_else(|| key.passphrase.clone());
-            AuthMethod::PrivateKey { openssh: key.private_key.clone(), passphrase }
+            let passphrase = overrides
+                .and_then(|o| o.passphrase.clone())
+                .filter(|_| !hop)
+                .or_else(|| key.passphrase.clone());
+            AuthMethod::PrivateKey {
+                openssh: key.private_key.clone(),
+                passphrase,
+            }
         }
         HostAuth::Agent => AuthMethod::Agent,
     })
@@ -141,20 +162,33 @@ fn hop_target(host: &Host) -> (String, u16, String) {
 }
 
 /// Builds the connection config for `host`, resolving its ProxyJump chain (SSH-10).
-pub fn build_config(vault: &Vault, host: &Host, self_id: Option<&str>, overrides: Option<&Overrides>) -> AppResult<ConnectConfig> {
+pub fn build_config(
+    vault: &Vault,
+    host: &Host,
+    self_id: Option<&str>,
+    overrides: Option<&Overrides>,
+) -> AppResult<ConnectConfig> {
     let mut chain: Vec<JumpHop> = Vec::new();
     let mut seen: HashSet<String> = self_id.into_iter().map(str::to_owned).collect();
     let mut next = host.jump_host_id.clone();
     while let Some(jump_id) = next {
         if !seen.insert(jump_id.clone()) || chain.len() >= 8 {
-            return Err(AppError::invalid("jump_host_id", "the jump host chain loops"));
+            return Err(AppError::invalid(
+                "jump_host_id",
+                "the jump host chain loops",
+            ));
         }
         let jump = vault
             .get(&jump_id)
             .and_then(Item::as_host)
             .ok_or_else(|| AppError::invalid("jump_host_id", "jump host not found"))?;
         let (h, p, u) = hop_target(jump);
-        chain.push(JumpHop { host: h, port: p, username: u, auth: auth_method(vault, jump, None, true)? });
+        chain.push(JumpHop {
+            host: h,
+            port: p,
+            username: u,
+            auth: auth_method(vault, jump, None, true)?,
+        });
         next = jump.jump_host_id.clone();
     }
     chain.reverse(); // outermost hop first
@@ -179,9 +213,16 @@ impl HostKeyVerifier for Verifier {
             if !vault.is_unlocked() {
                 return false;
             }
-            vault.known_hosts().into_iter().filter(|(_, k)| k.host.eq_ignore_ascii_case(host) && k.port == port).collect()
+            vault
+                .known_hosts()
+                .into_iter()
+                .filter(|(_, k)| k.host.eq_ignore_ascii_case(host) && k.port == port)
+                .collect()
         };
-        if known.iter().any(|(_, k)| k.key_type == key.key_type && k.public_key == key.public_key) {
+        if known
+            .iter()
+            .any(|(_, k)| k.key_type == key.key_type && k.public_key == key.public_key)
+        {
             return true;
         }
         // A known host presenting a different key — of any type — is blocked until the user
@@ -197,7 +238,11 @@ impl HostKeyVerifier for Verifier {
             port,
             key_type: key.key_type.clone(),
             fingerprint: key.fingerprint.clone(),
-            kind: if previous.is_some() { HostKeyPromptKind::Changed } else { HostKeyPromptKind::New },
+            kind: if previous.is_some() {
+                HostKeyPromptKind::Changed
+            } else {
+                HostKeyPromptKind::New
+            },
             known_fingerprint: previous.as_ref().map(|k| k.fingerprint.clone()),
             known_key_type: previous.as_ref().map(|k| k.key_type.clone()),
         };
@@ -250,18 +295,34 @@ impl KeyboardInteractive for Interactive {
         let event = AuthPrompt {
             request_id: request_id.clone(),
             session_id: self.session_id.clone(),
-            name: if request.name.is_empty() { request.host.clone() } else { request.name.clone() },
+            name: if request.name.is_empty() {
+                request.host.clone()
+            } else {
+                request.name.clone()
+            },
             instructions: request.instructions.clone(),
-            prompts: request.prompts.iter().map(|p| AuthPromptField { prompt: p.text.clone(), echo: p.echo }).collect(),
+            prompts: request
+                .prompts
+                .iter()
+                .map(|p| AuthPromptField {
+                    prompt: p.text.clone(),
+                    echo: p.echo,
+                })
+                .collect(),
         };
         if event.emit(&self.app).is_err() {
             lock(&state.ssh.auth_waiters).remove(&request_id);
             return None;
         }
-        let answers = tokio::time::timeout(PROMPT_TIMEOUT, rx).await.ok().and_then(Result::ok).flatten();
+        let answers = tokio::time::timeout(PROMPT_TIMEOUT, rx)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .flatten();
         lock(&state.ssh.auth_waiters).remove(&request_id);
         let answers = answers?;
-        (answers.len() == request.prompts.len()).then(|| answers.into_iter().map(Zeroizing::new).collect())
+        (answers.len() == request.prompts.len())
+            .then(|| answers.into_iter().map(Zeroizing::new).collect())
     }
 }
 
@@ -273,14 +334,28 @@ pub async fn connect_for_task(
     overrides: Option<&Overrides>,
 ) -> AppResult<SshSession> {
     let cfg = state.with_unlocked(|v| {
-        let host = v.get(host_id).and_then(Item::as_host).cloned().ok_or_else(|| AppError::not_found("host"))?;
+        let host = v
+            .get(host_id)
+            .and_then(Item::as_host)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("host"))?;
         build_config(v, &host, Some(host_id), overrides)
     })?;
     connect_with(app, cfg, None).await
 }
 
-pub async fn connect_with(app: &AppHandle, mut cfg: ConnectConfig, session_id: Option<String>) -> AppResult<SshSession> {
-    cfg.keyboard_interactive = Some(Arc::new(Interactive { app: app.clone(), session_id: session_id.clone() }));
-    let verifier = Arc::new(Verifier { app: app.clone(), session_id });
+pub async fn connect_with(
+    app: &AppHandle,
+    mut cfg: ConnectConfig,
+    session_id: Option<String>,
+) -> AppResult<SshSession> {
+    cfg.keyboard_interactive = Some(Arc::new(Interactive {
+        app: app.clone(),
+        session_id: session_id.clone(),
+    }));
+    let verifier = Arc::new(Verifier {
+        app: app.clone(),
+        session_id,
+    });
     Ok(hatoba_ssh::connect(cfg, verifier).await?)
 }

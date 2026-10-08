@@ -17,7 +17,12 @@ const AAD: &[u8] = b"hatoba/hello-vault-key/v1";
 const HKDF_INFO: &str = "hatoba/hello-wrap/v1";
 
 pub fn enrolled(secrets: &dyn SecretStore) -> bool {
-    available() && secrets.get(secret_keys::BIOMETRIC_VAULT_KEY).ok().flatten().is_some()
+    available()
+        && secrets
+            .get(secret_keys::BIOMETRIC_VAULT_KEY)
+            .ok()
+            .flatten()
+            .is_some()
 }
 
 pub fn remove(secrets: &dyn SecretStore) -> AppResult<()> {
@@ -30,7 +35,11 @@ pub fn available() -> bool {
     imp::available()
 }
 
-pub async fn enroll(app: &AppHandle, secrets: &dyn SecretStore, vault_key: &Key32) -> AppResult<()> {
+pub async fn enroll(
+    app: &AppHandle,
+    secrets: &dyn SecretStore,
+    vault_key: &Key32,
+) -> AppResult<()> {
     let signature = imp::sign(app, true).await?;
     let wrap = hkdf_sha256(&signature, HKDF_INFO);
     let envelope = seal(&wrap, AAD, vault_key.as_slice())?;
@@ -41,20 +50,33 @@ pub async fn enroll(app: &AppHandle, secrets: &dyn SecretStore, vault_key: &Key3
 pub async fn unlock(app: &AppHandle, secrets: &dyn SecretStore) -> AppResult<Key32> {
     let sealed = secrets
         .get(secret_keys::BIOMETRIC_VAULT_KEY)?
-        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Windows Hello is not set up for this vault"))?;
+        .ok_or_else(|| {
+            AppError::new(
+                ErrorCode::NotFound,
+                "Windows Hello is not set up for this vault",
+            )
+        })?;
     let signature = imp::sign(app, false).await?;
     let wrap = hkdf_sha256(&signature, HKDF_INFO);
     let plain = open_json(&wrap, AAD, &sealed).map_err(|_| {
-        AppError::new(ErrorCode::WrongPassword, "Windows Hello credential changed; unlock with the master password and enable it again")
+        AppError::new(
+            ErrorCode::WrongPassword,
+            "Windows Hello credential changed; unlock with the master password and enable it again",
+        )
     })?;
-    let bytes: [u8; 32] = plain.as_slice().try_into().map_err(|_| AppError::internal("bad biometric envelope"))?;
+    let bytes: [u8; 32] = plain
+        .as_slice()
+        .try_into()
+        .map_err(|_| AppError::internal("bad biometric envelope"))?;
     Ok(Zeroizing::new(bytes))
 }
 
 #[cfg(target_os = "windows")]
 mod imp {
     use tauri::AppHandle;
-    use windows::Security::Credentials::{KeyCredentialCreationOption, KeyCredentialManager, KeyCredentialStatus};
+    use windows::Security::Credentials::{
+        KeyCredentialCreationOption, KeyCredentialManager, KeyCredentialStatus,
+    };
     use windows::Security::Cryptography::CryptographicBuffer;
     use windows::core::{Array, HSTRING};
     use zeroize::Zeroizing;
@@ -66,7 +88,9 @@ mod imp {
     const CHALLENGE: &[u8] = b"hatoba/windows-hello/challenge/v1";
 
     pub fn available() -> bool {
-        KeyCredentialManager::IsSupportedAsync().and_then(|op| op.get()).unwrap_or(false)
+        KeyCredentialManager::IsSupportedAsync()
+            .and_then(|op| op.get())
+            .unwrap_or(false)
     }
 
     pub fn delete_credential() {
@@ -79,7 +103,10 @@ mod imp {
         if status == KeyCredentialStatus::UserCanceled {
             AppError::new(ErrorCode::Cancelled, "Windows Hello was cancelled")
         } else {
-            AppError::new(ErrorCode::Internal, format!("Windows Hello failed ({status:?})"))
+            AppError::new(
+                ErrorCode::Internal,
+                format!("Windows Hello failed ({status:?})"),
+            )
         }
     }
 
@@ -92,7 +119,10 @@ mod imp {
             let name = HSTRING::from(CREDENTIAL);
             let win = |e: windows::core::Error| AppError::internal(format!("Windows Hello: {e}"));
             let result = if create {
-                KeyCredentialManager::RequestCreateAsync(&name, KeyCredentialCreationOption::ReplaceExisting)
+                KeyCredentialManager::RequestCreateAsync(
+                    &name,
+                    KeyCredentialCreationOption::ReplaceExisting,
+                )
             } else {
                 KeyCredentialManager::OpenAsync(&name)
             }
@@ -104,7 +134,10 @@ mod imp {
             }
             let credential = result.Credential().map_err(win)?;
             let challenge = CryptographicBuffer::CreateFromByteArray(CHALLENGE).map_err(win)?;
-            let signed = credential.RequestSignAsync(&challenge).and_then(|op| op.get()).map_err(win)?;
+            let signed = credential
+                .RequestSignAsync(&challenge)
+                .and_then(|op| op.get())
+                .map_err(win)?;
             let status = signed.Status().map_err(win)?;
             if status != KeyCredentialStatus::Success {
                 return Err(status_error(status));
@@ -133,6 +166,9 @@ mod imp {
     pub fn delete_credential() {}
 
     pub async fn sign(_app: &AppHandle, _create: bool) -> AppResult<Zeroizing<Vec<u8>>> {
-        Err(AppError::new(ErrorCode::Internal, "biometric unlock is not available on this platform yet"))
+        Err(AppError::new(
+            ErrorCode::Internal,
+            "biometric unlock is not available on this platform yet",
+        ))
     }
 }

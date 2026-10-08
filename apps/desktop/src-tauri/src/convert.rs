@@ -26,8 +26,8 @@ pub fn host_view(id: &str, host: &Host, vault: &Vault) -> HostView {
         favorite: host.favorite,
         jump_host_id: host.jump_host_id.clone(),
         note: host.note.clone(),
-        updated_at: host.updated_at as f64,
-        last_connected_at: vault.last_connected(id).map(|v| v as f64),
+        updated_at: host.updated_at,
+        last_connected_at: vault.last_connected(id),
     }
 }
 
@@ -69,7 +69,9 @@ pub fn key_bits(key: &SshKey) -> u32 {
 fn rsa_bits(public_line: &str) -> Option<u32> {
     use base64::Engine as _;
     let blob = public_line.split_whitespace().nth(1)?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(blob).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(blob)
+        .ok()?;
     let mut rest = bytes.as_slice();
     let mut field = || -> Option<&[u8]> {
         let len = u32::from_be_bytes(rest.get(..4)?.try_into().ok()?) as usize;
@@ -100,9 +102,11 @@ pub fn key_view(id: &str, key: &SshKey, vault: &Vault) -> KeyView {
         public_key: key.public_key.clone(),
         fingerprint: key.fingerprint.clone(),
         comment: key.comment.clone(),
-        has_passphrase: key.passphrase.is_some() || key.private_key.contains("ENCRYPTED") || is_encrypted_openssh(&key.private_key),
-        created_at: key.created_at as f64,
-        updated_at: key.updated_at as f64,
+        has_passphrase: key.passphrase.is_some()
+            || key.private_key.contains("ENCRYPTED")
+            || is_encrypted_openssh(&key.private_key),
+        created_at: key.created_at,
+        updated_at: key.updated_at,
         used_by,
     }
 }
@@ -119,8 +123,13 @@ fn is_encrypted_openssh(pem: &str) -> bool {
     };
     // "openssh-key-v1\0" then a length-prefixed cipher name; "none" means unencrypted.
     let magic = b"openssh-key-v1\0";
-    let Some(rest) = bytes.strip_prefix(magic.as_slice()) else { return false };
-    let Some(len) = rest.get(..4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize) else {
+    let Some(rest) = bytes.strip_prefix(magic.as_slice()) else {
+        return false;
+    };
+    let Some(len) = rest
+        .get(..4)
+        .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    else {
         return false;
     };
     rest.get(4..4 + len).is_some_and(|cipher| cipher != b"none")
@@ -133,7 +142,7 @@ mod tests {
     #[test]
     fn rsa_bits_from_public_line() {
         // 2048-bit test key (public part only).
-        let line = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7vbqajDw4o6gJy8UtmIbkcpnkO3Kwc4qsEnSZp/TR+fQi62F79RHWmwKOtFmwteURgLbj7D/WGuNLGOfa/2vse3G2eHnHl5CB8ruRX9fBl/KgwCVr2JaEuUm66bBQeP5XeBotdR4cvX38uPYivCDdPjJ1QWPdspTBKcxeFbccDw5DCMYaD0YQbSs5GpPGVbJSs8CaX/9fXSoBLOy0e3SSRQ7OzUEtWyXsGmqQ1wlQK9dCYyN6zBgE5nrTKAn6U7ZOqH/7k6sMpcjzw8x9kaMDkIjvkZOZWvYyrc0ou7aNQyC5DrJ9+0ZBVJBHnWAH3sFlo0ICMv4G8SSgiuDDN1NN";
+        let line = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5yXqO2G+uN7XwKr6wYxn9xmR8PUYBu7T9EE1T+NF4iXL/JdPuRZl735qQOkeXPRqyCFwWCLpoWG/YFoKhIHh2mFa+7eEkQsJ8gXDrt1uiMiTkMEryyxSiDnV883q1SBgdbtPczDrE9qOHttWYk5nSfmK544NjFy8XSE+depQOwtCP2nn4hhcpX+FxJwFOj9ZV5cDToN4NoHS775IySxu8hz2Aa3zgy93eKEQk2R8NMGOB7lBl2kggZZojrJrm6yvMQgMufB9u9FCu3YRukdqk5E/94kir5xXi/Z2bU75Gjz69tf8k5GJDUL63XeNF8jlygqGg+99KLEkxwKfrFqJn test";
         assert_eq!(rsa_bits(line), Some(2048));
     }
 }

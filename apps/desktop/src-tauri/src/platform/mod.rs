@@ -16,6 +16,14 @@ pub fn platform_name() -> &'static str {
     }
 }
 
+pub fn platform() -> crate::dto::Platform {
+    match platform_name() {
+        "windows" => crate::dto::Platform::Windows,
+        "macos" => crate::dto::Platform::Macos,
+        _ => crate::dto::Platform::Linux,
+    }
+}
+
 /// Human-readable OS name for the device list, e.g. "Windows", "macOS", "Linux".
 pub fn os_label() -> String {
     match platform_name() {

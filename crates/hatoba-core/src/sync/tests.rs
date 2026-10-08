@@ -196,7 +196,7 @@ async fn enable_sync_requires_unlocked_vault_and_an_empty_remote() {
     // Wrong password: caught locally, before any setup request.
     let err = enable_sync(&a.vault, &a.backend, "nope", Some(SETUP_TOKEN), a.info()).await.unwrap_err();
     assert!(matches!(err, Error::WrongPassword));
-    assert!(a.backend.health().await.unwrap().initialized == false);
+    assert!(!a.backend.health().await.unwrap().initialized);
 
     // Wrong setup token.
     let err = enable_sync(&a.vault, &a.backend, PW, Some("wrong-token"), a.info()).await.unwrap_err();
@@ -1035,4 +1035,120 @@ async fn engine_wrapper_and_persistence_across_restart() {
     assert_eq!((report.pushed, report.pending_after), (1, 0));
     assert_eq!(server.item_count(), 3);
     let _ = new_id;
+}
+
+// ---- locking discipline ---------------------------------------------------------------------
+
+fn assert_send<T: Send>(_: &T) {}
+
+#[tokio::test]
+async fn flows_are_send_so_no_mutex_guard_can_live_across_an_await() {
+    // `std::sync::MutexGuard` is `!Send`: if any of these futures held the vault lock while
+    // suspended, this would not compile.
+    let (_server, _clock, a, _b) = world();
+    let vault = &a.vault;
+    let backend: &dyn SyncBackend = &a.backend;
+    let opts = SyncOptions::default();
+    assert_send(&sync_round(vault, backend, &opts));
+    assert_send(&enable_sync(vault, backend, PW, None, a.info()));
+    assert_send(&restore_from_cloud(vault, backend, PW, a.info()));
+    assert_send(&sign_in(vault, backend, PW, a.info()));
+    assert_send(&change_password_remote(vault, backend, PW, "x"));
+    assert_send(&rotate_recovery_remote(vault, backend, PW));
+    assert_send(&recover_remote(vault, backend, "code", "x", a.info()));
+    assert_send(&devices(vault, backend));
+    assert_send(&revoke_device(backend, "d"));
+    let engine = SyncEngine::new(share(Vault::open_in_memory().unwrap()), Arc::new(FakeBackend::new(&FakeServer::new())));
+    assert_send(&engine.sync());
+}
+
+#[tokio::test]
+async fn the_vault_is_not_locked_while_waiting_for_the_network() {
+    let (_server, clock, a, _b) = two_devices().await;
+    clock.advance(1000);
+    a.put(host("trigger-a-push"));
+
+    let (during_pull, during_push) = (Arc::new(std::sync::atomic::AtomicU8::new(0)), Arc::new(std::sync::atomic::AtomicU8::new(0)));
+    let (v1, flag1) = (a.vault.clone(), during_pull.clone());
+    a.backend.on_next_pull(move || {
+        flag1.store(if v1.try_lock().is_ok() { 1 } else { 2 }, std::sync::atomic::Ordering::SeqCst);
+    });
+    let (v2, flag2) = (a.vault.clone(), during_push.clone());
+    a.backend.on_push(move || {
+        flag2.store(if v2.try_lock().is_ok() { 1 } else { 2 }, std::sync::atomic::Ordering::SeqCst);
+    });
+    a.sync().await;
+    assert_eq!(during_pull.load(std::sync::atomic::Ordering::SeqCst), 1, "vault was locked during pull");
+    assert_eq!(during_push.load(std::sync::atomic::Ordering::SeqCst), 1, "vault was locked during push");
+}
+
+// ---- conflict log API -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn conflict_log_review_and_restoring_the_loser() {
+    let (_server, clock, a, b) = two_devices().await;
+    let seed = a.find("seed-host").unwrap();
+    clock.advance(1000);
+    a.rename(&seed, "loser-from-a");
+    clock.advance(1000);
+    b.rename(&seed, "winner-from-b");
+    a.sync().await;
+    b.sync().await;
+    a.sync().await;
+    assert_eq!(a.name_of(&seed).as_deref(), Some("winner-from-b"));
+
+    let id = {
+        let log = b.v().conflicts(true).unwrap();
+        assert_eq!(log.len(), 1);
+        log[0].id
+    };
+    assert!(matches!(b.v().restore_conflict_loser(9999), Err(Error::ItemNotFound(_))));
+
+    // Restoring brings the losing version back as a brand-new edit, which then syncs and wins.
+    clock.advance(1000);
+    let restored = b.v().restore_conflict_loser(id).unwrap();
+    assert_eq!(restored, seed);
+    assert_eq!(b.name_of(&seed).as_deref(), Some("loser-from-a"));
+    assert_eq!(b.pending(), 1);
+    assert_eq!(b.v().unreviewed_conflict_count(), 0, "restoring marks the entry reviewed");
+    assert!(b.v().conflicts(true).unwrap().is_empty());
+    assert_eq!(b.v().conflicts(false).unwrap().len(), 1, "the log keeps reviewed entries");
+    converge(&a, &b).await;
+    assert_eq!(a.name_of(&seed).as_deref(), Some("loser-from-a"));
+
+    // Marking as reviewed without restoring.
+    clock.advance(1000);
+    a.rename(&seed, "second-a");
+    clock.advance(1000);
+    b.rename(&seed, "second-b");
+    a.sync().await;
+    b.sync().await;
+    let id = b.v().conflicts(true).unwrap()[0].id;
+    b.v().mark_conflict_reviewed(id).unwrap();
+    assert_eq!(b.v().unreviewed_conflict_count(), 0);
+    assert_eq!(b.name_of(&seed).as_deref(), Some("second-b"), "reviewing changes no data");
+}
+
+#[tokio::test]
+async fn restoring_a_losing_deletion_deletes_the_item_again() {
+    let (_server, clock, a, b) = two_devices().await;
+    let seed = a.find("seed-host").unwrap();
+    clock.advance(1000);
+    b.v().delete(&seed).unwrap();
+    clock.advance(1000);
+    a.rename(&seed, "edited-instead-of-deleted");
+    a.sync().await;
+    b.sync().await; // the edit beats the deletion
+    assert_eq!(b.name_of(&seed).as_deref(), Some("edited-instead-of-deleted"));
+    let entry = b.v().conflicts(false).unwrap().remove(0);
+    assert!(entry.local_deleted && !entry.remote_deleted);
+    assert_eq!(entry.resolution, Resolution::RemoteWins);
+    assert!(entry.local.is_none(), "a deletion has no content to show");
+    assert_eq!(entry.remote.as_ref().unwrap().display_name(), "edited-instead-of-deleted");
+
+    clock.advance(1000);
+    b.v().restore_conflict_loser(entry.id).unwrap();
+    assert!(b.v().get(&seed).is_none());
+    converge(&a, &b).await;
+    assert!(a.v().get(&seed).is_none());
 }

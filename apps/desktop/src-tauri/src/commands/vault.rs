@@ -39,7 +39,7 @@ pub fn vault_status(state: State<'_, AppState>) -> VaultStatus {
             VaultState::Locked
         },
         failed_attempts: info.failed_attempts,
-        retry_at: info.retry_at.map(|v| v as f64),
+        retry_at: info.retry_at,
         sync_kind,
         biometric_available: biometric::available(),
         biometric_enabled: info.initialized && biometric::enrolled(state.secrets.as_ref()),
@@ -49,13 +49,26 @@ pub fn vault_status(state: State<'_, AppState>) -> VaultStatus {
 /// VAULT-01/02: creates the vault and returns the recovery code (shown exactly once).
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_create(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<String> {
+pub async fn vault_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<String> {
     if password.chars().count() < 8 {
-        return Err(AppError::invalid("password", "the master password must have at least 8 characters"));
+        return Err(AppError::invalid(
+            "password",
+            "the master password must have at least 8 characters",
+        ));
     }
     let password = Zeroizing::new(password);
     let vault = state.vault.clone();
-    let code = blocking(move || Ok(vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.create(&password)?)).await?;
+    let code = blocking(move || {
+        Ok(vault
+            .lock()
+            .map_err(|_| AppError::internal("vault poisoned"))?
+            .create(&password)?)
+    })
+    .await?;
     after_unlock(&app, &state);
     Ok(code.to_string())
 }
@@ -63,10 +76,20 @@ pub async fn vault_create(app: AppHandle, state: State<'_, AppState>, password: 
 /// VAULT-03 / SEC-06: wrong passwords are throttled with increasing delays (persisted).
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_unlock(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<()> {
+pub async fn vault_unlock(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<()> {
     let password = Zeroizing::new(password);
     let vault = state.vault.clone();
-    blocking(move || Ok(vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.unlock(&password)?)).await?;
+    blocking(move || {
+        Ok(vault
+            .lock()
+            .map_err(|_| AppError::internal("vault poisoned"))?
+            .unlock(&password)?)
+    })
+    .await?;
     after_unlock(&app, &state);
     Ok(())
 }
@@ -89,30 +112,55 @@ pub async fn vault_lock(app: AppHandle) {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_verify_password(state: State<'_, AppState>, password: String) -> AppResult<bool> {
+pub async fn vault_verify_password(
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<bool> {
     let password = Zeroizing::new(password);
     let vault = state.vault.clone();
-    blocking(move || Ok(vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.verify_password(&password)?)).await
+    blocking(move || {
+        Ok(vault
+            .lock()
+            .map_err(|_| AppError::internal("vault poisoned"))?
+            .verify_password(&password)?)
+    })
+    .await
 }
 
 /// VAULT-05: re-wraps only the vault key (no item is re-encrypted); with sync, the server copy is
 /// updated atomically and other devices' sessions are revoked.
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_change_password(app: AppHandle, state: State<'_, AppState>, current: String, next: String) -> AppResult<()> {
+pub async fn vault_change_password(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    current: String,
+    next: String,
+) -> AppResult<()> {
     if next.chars().count() < 8 {
-        return Err(AppError::invalid("next", "the master password must have at least 8 characters"));
+        return Err(AppError::invalid(
+            "next",
+            "the master password must have at least 8 characters",
+        ));
     }
     match state.sync.backend() {
-        Some(backend) => flows::change_password_remote(&state.vault, backend.as_ref(), &current, &next).await?,
+        Some(backend) => {
+            flows::change_password_remote(&state.vault, backend.as_ref(), &current, &next).await?
+        }
         None if state.sync_configured() => {
-            return Err(AppError::new(ErrorCode::SyncOffline, "sync must be reachable to change the master password"));
+            return Err(AppError::new(
+                ErrorCode::SyncOffline,
+                "sync must be reachable to change the master password",
+            ));
         }
         None => {
             let (cur, new) = (Zeroizing::new(current), Zeroizing::new(next));
             let vault = state.vault.clone();
             blocking(move || {
-                vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.change_password(&cur, &new)?;
+                vault
+                    .lock()
+                    .map_err(|_| AppError::internal("vault poisoned"))?
+                    .change_password(&cur, &new)?;
                 Ok(())
             })
             .await?;
@@ -126,22 +174,40 @@ pub async fn vault_change_password(app: AppHandle, state: State<'_, AppState>, c
 /// VAULT-06: resets the master password with the recovery code. Works offline when sync is off.
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_recover(app: AppHandle, state: State<'_, AppState>, recovery_code: String, new_password: String) -> AppResult<()> {
+pub async fn vault_recover(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    recovery_code: String,
+    new_password: String,
+) -> AppResult<()> {
     if new_password.chars().count() < 8 {
-        return Err(AppError::invalid("new_password", "the master password must have at least 8 characters"));
+        return Err(AppError::invalid(
+            "new_password",
+            "the master password must have at least 8 characters",
+        ));
     }
     let config = state.vault().sync_config()?;
     match config {
         Some(cfg) => {
             let backend = sync::backend_for(&cfg, state.secrets.as_ref())?;
-            let session = flows::recover_remote(&state.vault, backend.as_ref(), &recovery_code, &new_password, sync::device_info()).await?;
+            let session = flows::recover_remote(
+                &state.vault,
+                backend.as_ref(),
+                &recovery_code,
+                &new_password,
+                sync::device_info(),
+            )
+            .await?;
             save_session(state.secrets.as_ref(), &session)?;
         }
         None => {
             let (code, pw) = (Zeroizing::new(recovery_code), Zeroizing::new(new_password));
             let vault = state.vault.clone();
             blocking(move || {
-                vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.recover(&code, &pw)?;
+                vault
+                    .lock()
+                    .map_err(|_| AppError::internal("vault poisoned"))?
+                    .recover(&code, &pw)?;
                 Ok(())
             })
             .await?;
@@ -154,9 +220,20 @@ pub async fn vault_recover(app: AppHandle, state: State<'_, AppState>, recovery_
 /// Flow B (§6.6): first launch on a new device — download the vault from the cloud.
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_restore_from_cloud(app: AppHandle, state: State<'_, AppState>, config: SyncConfigInput, password: String) -> AppResult<()> {
+pub async fn vault_restore_from_cloud(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: SyncConfigInput,
+    password: String,
+) -> AppResult<()> {
     let (cfg, backend) = backend_from_input(&config)?;
-    let session = flows::restore_from_cloud(&state.vault, backend.as_ref(), &password, sync::device_info()).await?;
+    let session = flows::restore_from_cloud(
+        &state.vault,
+        backend.as_ref(),
+        &password,
+        sync::device_info(),
+    )
+    .await?;
     persist(&state, &cfg, &config, &session)?;
     state.sync.set_backend(Some(Arc::clone(&backend)));
     after_unlock(&app, &state);
@@ -173,16 +250,31 @@ pub fn vault_export_backup(state: State<'_, AppState>, path: String) -> AppResul
 /// Issues a new recovery code (the old one stops working everywhere once synced).
 #[tauri::command]
 #[specta::specta]
-pub async fn vault_rotate_recovery(state: State<'_, AppState>, password: String) -> AppResult<String> {
+pub async fn vault_rotate_recovery(
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<String> {
     let code = match state.sync.backend() {
-        Some(backend) => flows::rotate_recovery_remote(&state.vault, backend.as_ref(), &password).await?,
+        Some(backend) => {
+            flows::rotate_recovery_remote(&state.vault, backend.as_ref(), &password).await?
+        }
         None if state.sync_configured() => {
-            return Err(AppError::new(ErrorCode::SyncOffline, "sync must be reachable to create a new recovery code"));
+            return Err(AppError::new(
+                ErrorCode::SyncOffline,
+                "sync must be reachable to create a new recovery code",
+            ));
         }
         None => {
             let pw = Zeroizing::new(password);
             let vault = state.vault.clone();
-            blocking(move || Ok(vault.lock().map_err(|_| AppError::internal("vault poisoned"))?.rotate_recovery(&pw)?.0)).await?
+            blocking(move || {
+                Ok(vault
+                    .lock()
+                    .map_err(|_| AppError::internal("vault poisoned"))?
+                    .rotate_recovery(&pw)?
+                    .0)
+            })
+            .await?
         }
     };
     Ok(code.to_string())
@@ -191,9 +283,16 @@ pub async fn vault_rotate_recovery(state: State<'_, AppState>, password: String)
 /// SEC-07 (P1): enrol Windows Hello. Requires the master password as a fresh confirmation.
 #[tauri::command]
 #[specta::specta]
-pub async fn biometric_enable(app: AppHandle, state: State<'_, AppState>, password: String) -> AppResult<()> {
+pub async fn biometric_enable(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<()> {
     if !vault_verify_password(state.clone(), password).await? {
-        return Err(AppError::new(ErrorCode::WrongPassword, "wrong master password"));
+        return Err(AppError::new(
+            ErrorCode::WrongPassword,
+            "wrong master password",
+        ));
     }
     let key = state.with_unlocked(|v| Ok(v.vault_key_copy()?))?;
     biometric::enroll(&app, state.secrets.as_ref(), &key).await

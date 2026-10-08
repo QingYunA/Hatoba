@@ -10,7 +10,11 @@ use crate::state::AppState;
 #[tauri::command]
 #[specta::specta]
 pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
-    AppInfo { version: app.package_info().version.to_string(), platform: platform::platform_name().into(), mica: state.mica }
+    AppInfo {
+        version: app.package_info().version.to_string(),
+        platform: platform::platform(),
+        mica: state.mica,
+    }
 }
 
 /// Opens the Windows 11 Snap Layouts flyout (hovering the custom maximize button, WIN-01).

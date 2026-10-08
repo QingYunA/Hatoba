@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+import { messages } from "./locales";
+import { detectLocale, formatBytes, formatRelative, translate } from "./index";
+
+const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+
+describe("message tables", () => {
+  const zh = messages["zh-CN"];
+
+  it.each(["en", "ja"] as const)("%s has every zh-CN key", (locale) => {
+    const missing = Object.keys(zh).filter((k) => !(k in messages[locale]));
+    expect(missing).toEqual([]);
+  });
+
+  it.each(["en", "ja"] as const)("%s uses the same placeholders as zh-CN", (locale) => {
+    const table = messages[locale];
+    const mismatched = Object.keys(zh).filter(
+      (k) => k in table && placeholders(zh[k]).join() !== placeholders(table[k]).join(),
+    );
+    expect(mismatched).toEqual([]);
+  });
+
+  it("has no empty strings", () => {
+    for (const locale of ["zh-CN", "en", "ja"] as const) {
+      const empty = Object.entries(messages[locale]).filter(([, v]) => !v.trim()).map(([k]) => k);
+      expect(empty).toEqual([]);
+    }
+  });
+});
+
+describe("translate", () => {
+  it("interpolates and picks English singulars", () => {
+    expect(translate("en", "sync.footer.offline_sub", { n: 3 })).toBe("3 changes pending");
+    expect(translate("en", "sync.footer.offline_sub", { n: 1 })).toBe("1 change pending");
+    expect(translate("zh-CN", "sync.footer.offline_sub", { n: 1 })).toBe("1 项更改待上传");
+  });
+});
+
+describe("locale helpers", () => {
+  it("detects the system language", () => {
+    expect(detectLocale(["zh-TW"])).toBe("zh-CN");
+    expect(detectLocale(["ja-JP"])).toBe("ja");
+    expect(detectLocale(["fr-FR", "en-GB"])).toBe("en");
+    expect(detectLocale(["fr-FR"])).toBe("en");
+  });
+
+  it("formats relative times like the design", () => {
+    const now = new Date(2026, 9, 8, 9, 43).getTime();
+    expect(formatRelative("zh-CN", now - 2 * 60_000, now)).toBe("2 分钟前");
+    expect(formatRelative("en", now - 30_000, now)).toBe("Just now");
+    expect(formatRelative("zh-CN", new Date(2026, 9, 8, 9, 12).getTime() - 60 * 60_000, now)).toBe("今天 08:12");
+  });
+
+  it("formats sizes", () => {
+    expect(formatBytes(612)).toBe("612 B");
+    expect(formatBytes(2150)).toBe("2.1 KB");
+    expect(formatBytes(84 * 1024)).toBe("84 KB");
+  });
+});

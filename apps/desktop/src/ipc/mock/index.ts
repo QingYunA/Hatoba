@@ -35,6 +35,7 @@ export function createMockApi(): HatobaApi {
   let devices = [...D.DEVICES];
   let vaultState: VaultStatus["state"] =
     demo === "onboarding" ? "uninitialized" : demo === "locked" ? "locked" : "unlocked";
+  let biometric = q.get("hello") !== "off";
   let failed = 0;
   let retryAt: number | null = null;
   let sync: SyncStatus = makeSync();
@@ -105,7 +106,7 @@ export function createMockApi(): HatobaApi {
       retry_at: retryAt,
       sync_kind: sync.kind,
       biometric_available: true,
-      biometric_enabled: q.get("hello") !== "off",
+      biometric_enabled: biometric,
     }),
     vault_create: async (password) => {
       await delay(600);
@@ -162,8 +163,14 @@ export function createMockApi(): HatobaApi {
       if (password.length < 4) fail("wrong_password");
       return "M2QX-9KPL-D4WR-T8ZN-H36V-BEQ1-MA7T-CYK7";
     },
-    biometric_enable: async () => {},
-    biometric_disable: async () => {},
+    biometric_enable: async (password) => {
+      await delay(300);
+      if (password.length < 4) fail("wrong_password");
+      biometric = true;
+    },
+    biometric_disable: async () => {
+      biometric = false;
+    },
     activity_ping: async () => {},
 
     hosts_list: async () => {
@@ -217,6 +224,7 @@ export function createMockApi(): HatobaApi {
       hosts = hosts.map((h) => (h.id === hid ? { ...h, favorite } : h));
       touch();
     },
+    host_copy_password: async () => {},
     groups_list: async () => groups.map((g) => ({ ...g })),
     group_save: async (input) => {
       const g: GroupView = { id: input.id ?? id("g"), name: input.name, parent_id: input.parent_id, sort: input.sort };

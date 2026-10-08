@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use hatoba_core::model::Item;
 use hatoba_core::platform::{SecretStore, secret_keys};
-use hatoba_core::sync::{Backoff, D1Backend, SyncBackend, SyncConfig, SyncEngine, WorkerBackend, load_session};
+use hatoba_core::sync::{
+    Backoff, D1Backend, SyncBackend, SyncConfig, SyncEngine, WorkerBackend, load_session,
+};
 use tauri::AppHandle;
 use tauri_specta::Event;
 use tokio::sync::Notify;
@@ -44,7 +46,13 @@ pub struct SyncController {
 impl Default for SyncController {
     fn default() -> Self {
         Self {
-            inner: Mutex::new(Inner { backend: None, state: SyncState::Off, message: None, auto: true, pending_trigger: None }),
+            inner: Mutex::new(Inner {
+                backend: None,
+                state: SyncState::Off,
+                message: None,
+                auto: true,
+                pending_trigger: None,
+            }),
             wake: Notify::new(),
             round: tokio::sync::Mutex::new(()),
         }
@@ -61,12 +69,17 @@ impl SyncController {
     }
 
     pub fn require_backend(&self) -> AppResult<Arc<dyn SyncBackend>> {
-        self.backend().ok_or_else(|| AppError::new(crate::error::ErrorCode::Sync, "sync is not configured"))
+        self.backend()
+            .ok_or_else(|| AppError::new(crate::error::ErrorCode::Sync, "sync is not configured"))
     }
 
     pub fn set_backend(&self, backend: Option<Arc<dyn SyncBackend>>) {
         let mut inner = self.inner();
-        inner.state = if backend.is_some() { SyncState::Idle } else { SyncState::Off };
+        inner.state = if backend.is_some() {
+            SyncState::Idle
+        } else {
+            SyncState::Off
+        };
         inner.message = None;
         inner.backend = backend;
     }
@@ -87,17 +100,26 @@ impl SyncController {
 }
 
 /// Builds the configured backend with its session / API token from the OS credential store.
-pub fn backend_for(config: &SyncConfig, secrets: &dyn SecretStore) -> AppResult<Arc<dyn SyncBackend>> {
+pub fn backend_for(
+    config: &SyncConfig,
+    secrets: &dyn SecretStore,
+) -> AppResult<Arc<dyn SyncBackend>> {
     Ok(match config {
         SyncConfig::Worker { url } => {
             let backend = WorkerBackend::new(url)?;
             backend.set_session(load_session(secrets)?);
             Arc::new(backend)
         }
-        SyncConfig::D1 { account_id, database_id } => {
-            let token = secrets
-                .get(secret_keys::D1_API_TOKEN)?
-                .ok_or_else(|| AppError::new(crate::error::ErrorCode::SyncAuth, "the Cloudflare API token is missing"))?;
+        SyncConfig::D1 {
+            account_id,
+            database_id,
+        } => {
+            let token = secrets.get(secret_keys::D1_API_TOKEN)?.ok_or_else(|| {
+                AppError::new(
+                    crate::error::ErrorCode::SyncAuth,
+                    "the Cloudflare API token is missing",
+                )
+            })?;
             Arc::new(D1Backend::new(account_id, database_id, &token)?)
         }
     })
@@ -107,13 +129,15 @@ pub fn backend_for(config: &SyncConfig, secrets: &dyn SecretStore) -> AppResult<
 pub fn on_unlock(app: &AppHandle) {
     let st = state(app);
     let config = st.vault().sync_config().ok().flatten();
-    let backend = config.as_ref().and_then(|c| match backend_for(c, st.secrets.as_ref()) {
-        Ok(b) => Some(b),
-        Err(e) => {
-            tracing::warn!("sync backend unavailable: {}", e.detail);
-            None
-        }
-    });
+    let backend = config
+        .as_ref()
+        .and_then(|c| match backend_for(c, st.secrets.as_ref()) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                tracing::warn!("sync backend unavailable: {}", e.detail);
+                None
+            }
+        });
     let configured = config.is_some();
     st.sync.set_backend(backend);
     if configured && st.sync.backend().is_none() {
@@ -160,10 +184,18 @@ pub fn status(app: &AppHandle) -> SyncStatus {
     let (kind, endpoint, database) = match &config {
         None => (SyncKind::None, None, None),
         Some(SyncConfig::Worker { url }) => {
-            let host = url.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/').to_owned();
+            let host = url
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .trim_end_matches('/')
+                .to_owned();
             (SyncKind::Worker, Some(host), None)
         }
-        Some(SyncConfig::D1 { database_id, .. }) => (SyncKind::D1, Some("api.cloudflare.com".to_owned()), Some(database_id.clone())),
+        Some(SyncConfig::D1 { database_id, .. }) => (
+            SyncKind::D1,
+            Some("api.cloudflare.com".to_owned()),
+            Some(database_id.clone()),
+        ),
     };
     let unlocked = vault.is_unlocked();
     let counts = unlocked.then(|| {
@@ -176,16 +208,28 @@ pub fn status(app: &AppHandle) -> SyncStatus {
                 _ => {}
             }
         }
-        SyncCounts { hosts, keys, groups }
+        SyncCounts {
+            hosts,
+            keys,
+            groups,
+        }
     });
     SyncStatus {
         kind,
         endpoint,
         database,
-        state: if config.is_none() { SyncState::Off } else { state },
-        last_synced_at: vault.sync_last_at().map(|v| v as f64),
+        state: if config.is_none() {
+            SyncState::Off
+        } else {
+            state
+        },
+        last_synced_at: vault.sync_last_at(),
         pending: vault.pending_count().min(u64::from(u32::MAX)) as u32,
-        conflicts: if unlocked { vault.unreviewed_conflict_count().min(u64::from(u32::MAX)) as u32 } else { 0 },
+        conflicts: if unlocked {
+            vault.unreviewed_conflict_count().min(u64::from(u32::MAX)) as u32
+        } else {
+            0
+        },
         auto_sync: auto,
         message,
         counts,
@@ -197,10 +241,13 @@ pub fn emit_status(app: &AppHandle) {
 }
 
 fn conflict_suffix(app: &AppHandle) -> &'static str {
-    let lang = crate::commands::settings::prefs_get(state(app))
-        .map(|p| p.language)
-        .unwrap_or_default();
-    let lang = if lang == "system" { sys_locale() } else { lang };
+    use crate::dto::Language;
+    let lang = match crate::commands::settings::prefs_get(state(app)).map(|p| p.language) {
+        Ok(Language::ZhCn) => "zh".to_owned(),
+        Ok(Language::Ja) => "ja".to_owned(),
+        Ok(Language::En) => "en".to_owned(),
+        _ => sys_locale(),
+    };
     if lang.starts_with("zh") {
         "（冲突副本）"
     } else if lang.starts_with("ja") {
@@ -211,24 +258,35 @@ fn conflict_suffix(app: &AppHandle) -> &'static str {
 }
 
 fn sys_locale() -> String {
-    std::env::var("LANG").or_else(|_| std::env::var("LC_ALL")).unwrap_or_default().to_lowercase()
+    std::env::var("LANG")
+        .or_else(|_| std::env::var("LC_ALL"))
+        .unwrap_or_default()
+        .to_lowercase()
 }
 
 /// Runs one sync round now. Errors are reflected in the status and returned.
 pub async fn run_round(app: &AppHandle) -> AppResult<()> {
     let st = state(app);
-    let Some(backend) = st.sync.backend() else { return Ok(()) };
+    let Some(backend) = st.sync.backend() else {
+        return Ok(());
+    };
     if !st.vault().is_unlocked() {
         return Ok(());
     }
     let _guard = st.sync.round.lock().await;
     st.sync.set_state(SyncState::Syncing, None);
     emit_status(app);
-    let engine = SyncEngine::new(st.vault.clone(), backend).with_conflict_suffix(conflict_suffix(app));
+    let engine =
+        SyncEngine::new(st.vault.clone(), backend).with_conflict_suffix(conflict_suffix(app));
     let result = engine.sync().await;
     let outcome = match result {
         Ok(report) => {
-            tracing::info!(pulled = report.pulled, pushed = report.pushed, conflicts = report.conflicts_resolved, "sync round done");
+            tracing::info!(
+                pulled = report.pulled,
+                pushed = report.pushed,
+                conflicts = report.conflicts_resolved,
+                "sync round done"
+            );
             st.sync.set_state(SyncState::Idle, None);
             Ok(())
         }
@@ -256,15 +314,22 @@ pub fn spawn_scheduler(app: AppHandle) {
         let mut retry_at: Option<tokio::time::Instant> = None;
         loop {
             let st = state(&app);
-            let wait = retry_at.map_or(INTERVAL, |at| at.saturating_duration_since(tokio::time::Instant::now()).min(INTERVAL));
-            let woke = tokio::time::timeout(wait, st.sync.wake.notified()).await.is_ok();
+            let wait = retry_at.map_or(INTERVAL, |at| {
+                at.saturating_duration_since(tokio::time::Instant::now())
+                    .min(INTERVAL)
+            });
+            let woke = tokio::time::timeout(wait, st.sync.wake.notified())
+                .await
+                .is_ok();
             let trigger = st.sync.inner().pending_trigger.take();
             if woke && trigger == Some(Trigger::LocalChange) {
                 // Debounce bursts of edits (§6.3: 2 s).
                 tokio::time::sleep(DEBOUNCE).await;
                 st.sync.inner().pending_trigger.take();
             }
-            let due = trigger.is_some() || retry_at.is_none_or(|at| tokio::time::Instant::now() >= at) || !woke;
+            let due = trigger.is_some()
+                || retry_at.is_none_or(|at| tokio::time::Instant::now() >= at)
+                || !woke;
             let manual = trigger == Some(Trigger::Manual);
             if !due || st.sync.backend().is_none() || !(st.sync.auto() || manual) {
                 continue;
@@ -277,7 +342,12 @@ pub fn spawn_scheduler(app: AppHandle) {
                     backoff.reset();
                     retry_at = None;
                 }
-                Err(e) if matches!(e.code, crate::error::ErrorCode::SyncOffline | crate::error::ErrorCode::Sync) => {
+                Err(e)
+                    if matches!(
+                        e.code,
+                        crate::error::ErrorCode::SyncOffline | crate::error::ErrorCode::Sync
+                    ) =>
+                {
                     retry_at = Some(tokio::time::Instant::now() + backoff.next_delay());
                 }
                 Err(_) => retry_at = None,
@@ -292,9 +362,16 @@ pub fn device_info() -> hatoba_core::platform::DeviceInfo {
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
         .filter(|n| !n.trim().is_empty())
-        .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_owned()))
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|s| s.trim().to_owned())
+        })
         .unwrap_or_else(|| "Hatoba".to_owned());
-    hatoba_core::platform::DeviceInfo { name, platform: crate::platform::os_label() }
+    hatoba_core::platform::DeviceInfo {
+        name,
+        platform: crate::platform::os_label(),
+    }
 }
 
 impl AppState {

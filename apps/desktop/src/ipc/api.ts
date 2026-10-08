@@ -66,6 +66,8 @@ export interface HatobaApi {
   host_delete(id: string): Promise<void>;
   host_duplicate(id: string): Promise<HostView>;
   host_set_favorite(id: string, favorite: boolean): Promise<void>;
+  /** SEC-08: Rust copies the saved password to the clipboard and clears it after 30 s. */
+  host_copy_password(id: string): Promise<void>;
   groups_list(): Promise<GroupView[]>;
   group_save(input: GroupInput): Promise<GroupView>;
   group_delete(id: string): Promise<void>;
@@ -149,11 +151,13 @@ export function toAppError(e: unknown): AppError {
   return { code: "internal", detail: e instanceof Error ? e.message : String(e) };
 }
 
-let impl: HatobaApi | null = null;
+let impl: Promise<HatobaApi> | null = null;
 
-async function load(): Promise<HatobaApi> {
-  if (impl) return impl;
-  impl = isTauri() ? (await import("./tauri")).createTauriApi() : (await import("./mock")).createMockApi();
+/** Cached promise so concurrent first calls share one backend instance. */
+function load(): Promise<HatobaApi> {
+  impl ??= isTauri()
+    ? import("./tauri").then((m) => m.createTauriApi())
+    : import("./mock").then((m) => m.createMockApi());
   return impl;
 }
 

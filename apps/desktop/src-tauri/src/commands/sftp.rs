@@ -23,14 +23,18 @@ fn entry(e: hatoba_ssh::FileEntry) -> FileEntry {
         path: e.path,
         is_dir: e.is_dir,
         is_symlink: e.is_symlink,
-        size: e.size as f64,
-        modified: e.modified.map(|m| m as f64),
+        size: e.size,
+        modified: e.modified,
         permissions: e.permissions,
     }
 }
 
 fn join_remote(dir: &str, name: &str) -> String {
-    if dir.ends_with('/') { format!("{dir}{name}") } else { format!("{dir}/{name}") }
+    if dir.ends_with('/') {
+        format!("{dir}{name}")
+    } else {
+        format!("{dir}/{name}")
+    }
 }
 
 /// Rejects names that would escape the target directory or are meaningless on the server.
@@ -49,34 +53,62 @@ pub async fn sftp_home(state: State<'_, AppState>, session_id: String) -> AppRes
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sftp_list(state: State<'_, AppState>, session_id: String, path: String) -> AppResult<Vec<FileEntry>> {
+pub async fn sftp_list(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> AppResult<Vec<FileEntry>> {
     let entries = client(&state, &session_id).await?.list(&path).await?;
     Ok(entries.into_iter().map(entry).collect())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sftp_rename(state: State<'_, AppState>, session_id: String, from: String, to: String) -> AppResult<()> {
+pub async fn sftp_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    from: String,
+    to: String,
+) -> AppResult<()> {
     if let Some(name) = to.rsplit('/').next() {
         validate_name(name)?;
     }
-    Ok(client(&state, &session_id).await?.rename(&from, &to).await?)
+    Ok(client(&state, &session_id)
+        .await?
+        .rename(&from, &to)
+        .await?)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sftp_remove(state: State<'_, AppState>, session_id: String, path: String, is_dir: bool) -> AppResult<()> {
+pub async fn sftp_remove(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> AppResult<()> {
     if path.trim_end_matches('/').is_empty() {
-        return Err(AppError::invalid("path", "refusing to delete the root directory"));
+        return Err(AppError::invalid(
+            "path",
+            "refusing to delete the root directory",
+        ));
     }
     let sftp = client(&state, &session_id).await?;
-    if is_dir { sftp.remove_recursive(&path).await? } else { sftp.remove_file(&path).await? }
+    if is_dir {
+        sftp.remove_recursive(&path).await?
+    } else {
+        sftp.remove_file(&path).await?
+    }
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sftp_mkdir(state: State<'_, AppState>, session_id: String, path: String) -> AppResult<()> {
+pub async fn sftp_mkdir(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> AppResult<()> {
     if let Some(name) = path.trim_end_matches('/').rsplit('/').next() {
         validate_name(name)?;
     }
@@ -109,9 +141,9 @@ impl Transfer {
             session_id: self.session_id.clone(),
             direction: self.direction,
             name: self.name.clone(),
-            bytes: p.bytes as f64,
-            total: p.total as f64,
-            bytes_per_sec: p.bytes_per_sec as f64,
+            bytes: p.bytes,
+            total: p.total,
+            bytes_per_sec: p.bytes_per_sec,
             state,
             error,
         }
@@ -125,14 +157,21 @@ fn spawn_transfer(
     session_id: String,
     direction: TransferDirection,
     name: String,
-    run: impl FnOnce(std::sync::Arc<Transfer>, CancellationToken) -> futures::future::BoxFuture<'static, Result<(), hatoba_ssh::SshError>>
-        + Send
-        + 'static,
+    run: impl FnOnce(
+        std::sync::Arc<Transfer>,
+        CancellationToken,
+    ) -> futures::future::BoxFuture<'static, Result<(), hatoba_ssh::SshError>>
+    + Send
+    + 'static,
 ) -> String {
     let id = uuid::Uuid::now_v7().to_string();
     let token = CancellationToken::new();
     app_state(&app).ssh.add_transfer(id.clone(), token.clone());
-    let zero = TransferProgress { bytes: 0, total: 0, bytes_per_sec: 0 };
+    let zero = TransferProgress {
+        bytes: 0,
+        total: 0,
+        bytes_per_sec: 0,
+    };
     let transfer = std::sync::Arc::new(Transfer {
         app: app.clone(),
         id: id.clone(),
@@ -165,17 +204,27 @@ pub async fn sftp_download(
     local_path: String,
 ) -> AppResult<String> {
     let sftp = client(&state, &session_id).await?;
-    let name = remote_path.rsplit('/').next().unwrap_or(&remote_path).to_owned();
+    let name = remote_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(&remote_path)
+        .to_owned();
     let local = PathBuf::from(local_path);
-    Ok(spawn_transfer(app, session_id, TransferDirection::Download, name, move |t, token| {
-        Box::pin(async move {
-            let progress = {
-                let t = t.clone();
-                move |p: TransferProgress| t.progress(p)
-            };
-            sftp.download(&remote_path, &local, progress, token).await
-        })
-    }))
+    Ok(spawn_transfer(
+        app,
+        session_id,
+        TransferDirection::Download,
+        name,
+        move |t, token| {
+            Box::pin(async move {
+                let progress = {
+                    let t = t.clone();
+                    move |p: TransferProgress| t.progress(p)
+                };
+                sftp.download(&remote_path, &local, progress, token).await
+            })
+        },
+    ))
 }
 
 /// SFTP-02 upload into `remote_dir` (file picker or drag & drop).
@@ -196,15 +245,21 @@ pub async fn sftp_upload(
         .ok_or_else(|| AppError::invalid("local_path", "not a file"))?;
     validate_name(&name)?;
     let remote = join_remote(&remote_dir, &name);
-    Ok(spawn_transfer(app, session_id, TransferDirection::Upload, name, move |t, token| {
-        Box::pin(async move {
-            let progress = {
-                let t = t.clone();
-                move |p: TransferProgress| t.progress(p)
-            };
-            sftp.upload(&local, &remote, progress, token).await
-        })
-    }))
+    Ok(spawn_transfer(
+        app,
+        session_id,
+        TransferDirection::Upload,
+        name,
+        move |t, token| {
+            Box::pin(async move {
+                let progress = {
+                    let t = t.clone();
+                    move |p: TransferProgress| t.progress(p)
+                };
+                sftp.upload(&local, &remote, progress, token).await
+            })
+        },
+    ))
 }
 
 #[tauri::command]

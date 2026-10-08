@@ -64,6 +64,17 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Esc already clears search fields; datalist suggestions need no arrow. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[list]::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
 .mono {
   font-family: var(--font-mono);
 }

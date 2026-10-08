@@ -33,6 +33,7 @@ export function createTauriApi(): HatobaApi {
     host_delete: (id) => call("host_delete", { id }),
     host_duplicate: (id) => call("host_duplicate", { id }),
     host_set_favorite: (id, favorite) => call("host_set_favorite", { id, favorite }),
+    host_copy_password: (id) => call("host_copy_password", { id }),
     groups_list: () => call("groups_list"),
     group_save: (input) => call("group_save", { input }),
     group_delete: (id) => call("group_delete", { id }),

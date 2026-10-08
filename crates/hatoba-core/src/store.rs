@@ -426,8 +426,7 @@ impl Store {
         if current > i64::from(SCHEMA_VERSION) {
             return Err(Error::UnsupportedVersion(format!("database schema {current}")));
         }
-        for step in usize::try_from(current).unwrap_or(0)..MIGRATIONS.len() {
-            let sql = MIGRATIONS[step];
+        for (step, sql) in MIGRATIONS.iter().enumerate().skip(usize::try_from(current).unwrap_or(0)) {
             self.transaction(|tx| {
                 tx.conn().execute_batch(sql)?;
                 tx.set_meta(meta::SCHEMA_VERSION, &(step + 1).to_string())

@@ -12,10 +12,17 @@ export const MIN_SCORE = 2;
 type Checker = (password: string) => number;
 let checkerPromise: Promise<Checker> | null = null;
 
-/** Lazy-loads zxcvbn on first use so it stays out of the startup bundle. */
+/** Lazy-loads zxcvbn and its dictionaries on first use so they stay out of the startup bundle. */
 function loadChecker(): Promise<Checker> {
-  checkerPromise ??= import("@zxcvbn-ts/core").then(({ ZxcvbnFactory }) => {
-    const zxcvbn = new ZxcvbnFactory({ dictionary: { common: COMMON_PASSWORDS } });
+  checkerPromise ??= Promise.all([
+    import("@zxcvbn-ts/core"),
+    import("@zxcvbn-ts/language-common"),
+    import("@zxcvbn-ts/language-en"),
+  ]).then(([{ ZxcvbnFactory }, common, en]) => {
+    const zxcvbn = new ZxcvbnFactory({
+      dictionary: { ...common.dictionary, ...en.dictionary, hatoba: COMMON_PASSWORDS },
+      graphs: common.adjacencyGraphs,
+    });
     // Long inputs are truncated: zxcvbn's cost grows with length and 100 characters is already off the scale.
     return (password: string) => zxcvbn.check(password.slice(0, 100)).score;
   });
@@ -64,6 +71,8 @@ export type NewPasswordIssue = "short" | "weak" | null;
 export function useNewPassword() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  // Start loading zxcvbn as soon as the form appears so the first keystrokes get a score.
+  useEffect(() => void loadChecker(), []);
   const score = useStrength(password);
   const issue: NewPasswordIssue =
     password.length < MIN_PASSWORD_LENGTH ? "short" : score !== null && score < MIN_SCORE ? "weak" : null;

@@ -27,7 +27,7 @@ pub fn new_id() -> String {
 /// How a host authenticates.
 ///
 /// The password lives in a [`Zeroizing`] string, so it is wiped whenever the value is dropped.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HostAuth {
     /// A saved password (secret).
@@ -43,13 +43,8 @@ pub enum HostAuth {
     /// The system SSH agent (P1).
     Agent,
     /// Ask on every connection; nothing is stored.
+    #[default]
     Ask,
-}
-
-impl Default for HostAuth {
-    fn default() -> Self {
-        Self::Ask
-    }
 }
 
 impl HostAuth {

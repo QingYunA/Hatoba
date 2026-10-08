@@ -1,6 +1,5 @@
 //! Process-wide state managed by Tauri. Secrets only ever live here, in Rust (spec §3.2).
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use std::time::Instant;
@@ -21,20 +20,18 @@ pub struct AppState {
     pub secrets: Arc<KeyringStore>,
     pub ssh: SshManager,
     pub sync: SyncController,
-    pub data_dir: PathBuf,
     pub mica: bool,
     pub lock_policy: LockPolicy,
     last_activity: Mutex<Instant>,
 }
 
 impl AppState {
-    pub fn new(vault: Vault, data_dir: PathBuf, mica: bool) -> Self {
+    pub fn new(vault: Vault, mica: bool) -> Self {
         Self {
             vault: Arc::new(Mutex::new(vault)),
             secrets: Arc::new(KeyringStore),
             ssh: SshManager::default(),
             sync: SyncController::default(),
-            data_dir,
             mica,
             lock_policy: LockPolicy::default(),
             last_activity: Mutex::new(Instant::now()),
@@ -61,7 +58,10 @@ impl AppState {
     }
 
     pub fn idle_for(&self) -> std::time::Duration {
-        self.last_activity.lock().unwrap_or_else(|p| p.into_inner()).elapsed()
+        self.last_activity
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .elapsed()
     }
 }
 
@@ -77,7 +77,9 @@ pub fn now_ms() -> i64 {
 }
 
 /// Runs CPU-heavy work (Argon2id, RSA generation) off the async runtime.
-pub async fn blocking<R: Send + 'static>(f: impl FnOnce() -> AppResult<R> + Send + 'static) -> AppResult<R> {
+pub async fn blocking<R: Send + 'static>(
+    f: impl FnOnce() -> AppResult<R> + Send + 'static,
+) -> AppResult<R> {
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| AppError::internal(format!("background task failed: {e}")))?

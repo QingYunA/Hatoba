@@ -32,6 +32,7 @@
 .term {
   position: absolute;
   inset: 0;
+  z-index: 0; /* contain xterm's own z-indexed layers so overlays stay clickable */
 }
 
 /* FitAddon subtracts the padding of .xterm from the available size, so padding goes on it. */
