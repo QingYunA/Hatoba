@@ -379,6 +379,7 @@ mod tests {
         vault.set_local_prefs(&legacy_prefs("menu", false)).unwrap();
         let config = SyncConfig::Worker {
             url: "https://sync.example.workers.dev".into(),
+            deployment: None,
         };
         vault.set_sync_config(Some(&config)).unwrap();
         let before = vault.settings();
