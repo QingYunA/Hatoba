@@ -1,0 +1,11 @@
+# Keep LF everywhere: key fixtures, SQL migrations and generated bindings must be byte-identical
+# on Windows checkouts (core.autocrlf would otherwise rewrite them).
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ppk -text
+crates/hatoba-ssh/tests/fixtures/** -text
