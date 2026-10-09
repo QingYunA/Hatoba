@@ -86,10 +86,10 @@ This page tracks implementation progress, items awaiting verification, and follo
 | NSIS installer | ✅ | Built by the `rust-windows` job in [CI](../.github/workflows/ci.yml) on pushes to `main` and manual runs (not on pull requests). Unsigned |
 | macOS app bundle and DMG | 🟡 | Built by the `rust-macos` job in [CI](../.github/workflows/ci.yml) on pushes to `main` and manual runs (not on pull requests), for Apple Silicon. Ad-hoc signed (`signingIdentity` `-`), not notarized. Opening a downloaded DMG through Gatekeeper not yet tried |
 | GitHub Releases | 🟡 | The [Release workflow](../.github/workflows/release.yml) publishes the installer after approval; [Release Hatoba](releasing.md) has the steps |
-| Authenticode code signing | ⬜ | P1. Azure Trusted Signing could keep the cost down |
-| Update check in Settings → About | 🟡 | Unit tests cover the handling of GitHub's answers. Not yet tried against a published release |
+| Authenticode code signing | Not planned | A certificate is impractical to obtain ([§11](hatoba-spec.md#11-non-functional-requirements)), so SmartScreen warns on the first install |
+| Update check in Settings → About | 🟡 | Reads `latest.json` through the Tauri updater: stable versions from the latest release, prereleases from the newest release in the GitHub API. Unit tests run against a mock endpoint and a mock release list. Not yet tried against a published release |
 | Star prompt and **Report a Problem** (§9) | 🟡 | Unit tests cover when the prompt shows and the bug report link. Filling in the bug report form not yet tried on GitHub |
-| Signed updates through the Tauri updater | ⬜ | P1 |
+| Signed updates through the Tauri updater | 🟡 | **Download and Install** in Settings → About. Tried end to end on Windows with a local endpoint ([Signed updates](development.md#signed-updates)). Needs the update signing key and its public key ([Set up update signing](releasing.md#set-up-update-signing)), then a stable release to try it against |
 
 ## AI assistant (§13)
 
@@ -123,7 +123,7 @@ Out of scope for the MVP: team sharing and multi-user vaults, mobile apps (the a
 | M2 Local vault | Encryption, SQLite, creating, editing, and deleting hosts, groups, tags, and keys, unlock and auto-lock, recovery code | A search of the local database file finds no plaintext host name, password, or private key |
 | M3 Sync | Worker + D1, sync engine, sync wizard and status page, device management | Two devices sync both ways, offline changes merge correctly, conflicts are handled per §6.4, and D1 holds only ciphertext |
 | M4 SFTP and polish | SFTP panel, all empty and error states, shortcuts, ssh config import | Every P0 item in §7, §8, and §9 is done |
-| M5 Release | Windows installer and code signing, auto-update, README, Worker deployment template | A new user can deploy the Worker and enable sync within 10 minutes by following the README |
+| M5 Release | Windows installer, auto-update, README, Worker deployment template | A new user can deploy the Worker and enable sync within 10 minutes by following the README |
 
 ## Open questions
 
