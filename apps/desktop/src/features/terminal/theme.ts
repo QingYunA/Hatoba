@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { isDarkTheme, useApp } from "@/app/store";
 import { api } from "@/ipc/api";
 import type { TerminalSettings } from "@/ipc/types";
-import { defaultTerminalFont, type Platform } from "@/lib/platform";
+import { defaultRightClick, defaultTerminalFont, type Platform } from "@/lib/platform";
 
 /** Used until `settings_get` answers, and when it fails. */
 export function defaultTerminalSettings(platform: Platform): TerminalSettings {
@@ -13,7 +13,7 @@ export function defaultTerminalSettings(platform: Platform): TerminalSettings {
     theme: "dark",
     cursor_style: "block",
     scrollback: 10_000,
-    right_click: "copy_paste",
+    right_click: defaultRightClick(platform),
     confirm_multiline_paste: true,
   };
 }

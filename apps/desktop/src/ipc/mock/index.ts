@@ -15,7 +15,7 @@ import type {
   VaultStatus,
 } from "../types";
 import { sameTarget } from "@/features/hosts/quickConnect";
-import { defaultTerminalFont } from "@/lib/platform";
+import { defaultRightClick, defaultTerminalFont } from "@/lib/platform";
 import { FRAME_CLOSED, FRAME_DATA, FRAME_SESSION } from "../types";
 import { createAiMock } from "./ai";
 import { createAiExtensionsMock } from "./aiExtensions";
@@ -75,6 +75,7 @@ export function createMockApi(): HatobaApi {
   let keys: KeyView[] = demo === "empty" ? [] : D.KEYS.map((k) => ({ ...k }));
   let settings = structuredClone(D.SETTINGS);
   settings.terminal.font_family = defaultTerminalFont(platform);
+  settings.terminal.right_click = defaultRightClick(platform);
   let prefs: LocalPrefs = loadPrefs();
   const starPrompt: StarPrompt = { first_seen_at: q.get("star") === "due" ? Date.now() - 2 * 86_400_000 : Date.now(), done: false };
   let conflicts = syncDemo === "conflict" ? [...D.CONFLICTS] : [];

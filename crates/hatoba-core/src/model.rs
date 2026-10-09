@@ -770,6 +770,22 @@ pub enum RightClick {
     CopyPaste,
 }
 
+impl RightClick {
+    /// What an unset field reads as: the PuTTY habit of copying and pasting, except on macOS,
+    /// where a secondary click that pastes surprises users and a context menu is expected.
+    ///
+    /// This is fixed when the crate is built: `hatoba-core` takes no dependency on the desktop
+    /// app, and the target OS of a build is the OS the vault is opened on.
+    #[must_use]
+    pub const fn platform_default() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Menu
+        } else {
+            Self::CopyPaste
+        }
+    }
+}
+
 /// Terminal appearance and behaviour settings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 #[serde(default)]
@@ -787,7 +803,8 @@ pub struct TerminalSettings {
     /// Scrollback lines.
     pub scrollback: u32,
     /// Right-click behaviour. `None` until a value is recorded, which items written by builds
-    /// that kept it device-local never have; read it with [`Self::right_click`].
+    /// that kept it device-local never have, and which reads as [`RightClick::platform_default`];
+    /// read it with [`Self::right_click`].
     #[zeroize(skip)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub right_click: Option<RightClick>,
@@ -822,10 +839,10 @@ impl Default for TerminalSettings {
 }
 
 impl TerminalSettings {
-    /// The right-click behaviour; copy/paste while unset.
+    /// The right-click behaviour; [`RightClick::platform_default`] while unset.
     #[must_use]
     pub fn right_click(&self) -> RightClick {
-        self.right_click.unwrap_or_default()
+        self.right_click.unwrap_or(RightClick::platform_default())
     }
 
     /// Whether multi-line pastes need confirming; `true` while unset.
@@ -836,7 +853,7 @@ impl TerminalSettings {
 
     /// Records the right-click behaviour. An unset field stays unset when `value` is the default.
     pub fn set_right_click(&mut self, value: RightClick) {
-        record(&mut self.right_click, value, RightClick::default());
+        record(&mut self.right_click, value, RightClick::platform_default());
     }
 
     /// Records whether multi-line pastes need confirming. An unset field stays unset when `value`
@@ -1804,7 +1821,7 @@ mod tests {
         assert_eq!(s.terminal.theme, ThemeMode::Dark);
         assert_eq!(s.terminal.cursor_style, CursorStyle::Block);
         assert_eq!(s.terminal.scrollback, 10_000);
-        assert_eq!(s.terminal.right_click(), RightClick::CopyPaste);
+        assert_eq!(s.terminal.right_click(), RightClick::platform_default());
         assert!(s.terminal.confirm_multiline_paste());
         assert_eq!(s.auto_lock_minutes, 15);
         assert!(!s.lock_disconnects_sessions);
@@ -1828,6 +1845,7 @@ mod tests {
         assert_eq!(unset.confirm_multiline_paste, None);
         let set = read(json!({"right_click":"copy_paste","confirm_multiline_paste":true}));
         assert_eq!(set.right_click, Some(RightClick::CopyPaste));
+        assert_eq!(set.right_click(), RightClick::CopyPaste);
         assert_eq!(set.confirm_multiline_paste, Some(true));
         let set = read(json!({"right_click":"menu","confirm_multiline_paste":false}));
         assert_eq!(set.right_click(), RightClick::Menu);
@@ -1844,21 +1862,29 @@ mod tests {
 
     #[test]
     fn recording_the_default_leaves_an_unset_field_unset() {
+        // The default depends on the platform, so name the value that is not it.
+        let default = RightClick::platform_default();
+        let other = match default {
+            RightClick::Menu => RightClick::CopyPaste,
+            RightClick::CopyPaste => RightClick::Menu,
+        };
         let mut t = TerminalSettings::default();
-        t.set_right_click(RightClick::CopyPaste);
+        t.set_right_click(default);
         t.set_confirm_multiline_paste(true);
         assert_eq!(t.right_click, None);
+        assert_eq!(t.right_click(), default);
         assert_eq!(t.confirm_multiline_paste, None);
 
-        t.set_right_click(RightClick::Menu);
+        t.set_right_click(other);
         t.set_confirm_multiline_paste(false);
-        assert_eq!(t.right_click, Some(RightClick::Menu));
+        assert_eq!(t.right_click, Some(other));
+        assert_eq!(t.right_click(), other);
         assert_eq!(t.confirm_multiline_paste, Some(false));
 
         // Once set, changing back to the default is recorded too.
-        t.set_right_click(RightClick::CopyPaste);
+        t.set_right_click(default);
         t.set_confirm_multiline_paste(true);
-        assert_eq!(t.right_click, Some(RightClick::CopyPaste));
+        assert_eq!(t.right_click, Some(default));
         assert_eq!(t.confirm_multiline_paste, Some(true));
     }
 
