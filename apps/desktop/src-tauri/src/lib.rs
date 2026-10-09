@@ -232,17 +232,34 @@ pub fn run() {
                     state.dropped.record(paths);
                 }
             }
+            // macOS: the red button hides the window and keeps the app, its sessions and the
+            // vault running, like other Mac apps. A destroyed last window would exit the app.
+            // The Dock icon brings the window back (`RunEvent::Reopen`); Cmd+Q still quits.
+            #[cfg(target_os = "macos")]
+            tauri::WindowEvent::CloseRequested { api, .. }
+                if window.label() == platform::window::MAIN =>
+            {
+                api.prevent_close();
+                platform::window::hide_main(window.clone());
+            }
             _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while building Hatoba")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event
-                && let Some(state) = app.try_state::<state::AppState>()
-            {
-                // AI-32: MCP servers stop when the app quits.
-                tauri::async_runtime::block_on(state.mcp.shutdown());
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => {
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    // AI-32: MCP servers stop when the app quits.
+                    tauri::async_runtime::block_on(state.mcp.shutdown());
+                }
             }
+            // macOS: a Dock click while the window is hidden or minimized shows it again.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => platform::window::reopen_main(app),
+            _ => {}
         });
 }
 

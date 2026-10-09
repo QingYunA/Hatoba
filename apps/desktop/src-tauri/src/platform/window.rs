@@ -56,6 +56,39 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// Hides the main window for the red button. A fullscreen window leaves fullscreen first: hidden in
+/// place, it would leave its black Space behind and come back fullscreen. `is_fullscreen` may turn
+/// false before the exit animation ends, so the hide waits for the animation as well.
+#[cfg(target_os = "macos")]
+pub fn hide_main(window: tauri::Window) {
+    use std::time::Duration;
+
+    if !window.is_fullscreen().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+    let _ = window.set_fullscreen(false);
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if !window.is_fullscreen().unwrap_or(true) {
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let _ = window.hide();
+    });
+}
+
+/// Brings the main window back after the red button hid it or after it was minimized (Dock click).
+#[cfg(target_os = "macos")]
+pub fn reopen_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.unminimize();
+    }
+    show_main(app);
+}
+
 /// Opens the Windows 11 Snap Layouts flyout for the focused window by sending Win+Z.
 ///
 /// WebView2 swallows the non-client hit-testing that normally triggers the flyout when hovering the
