@@ -921,7 +921,7 @@ The design has a macOS look, and the first Windows release adapts it as below. I
 
 | Action | Windows / Linux | macOS (P1) |
 |---|---|---|
-| Search hosts | Ctrl+Shift+K (Ctrl+K also works when the terminal does not have focus) | ⌘K |
+| Search hosts | Ctrl+Shift+K (Ctrl+K also works when the terminal does not have focus) | ⌘K (clears the terminal instead when it has focus) |
 | New tab | Ctrl+Shift+T | ⌘T |
 | Close tab | Ctrl+Shift+W | ⌘W |
 | Switch tabs | Ctrl+Tab / Ctrl+Shift+Tab | ⌃Tab / ⌃⇧Tab |

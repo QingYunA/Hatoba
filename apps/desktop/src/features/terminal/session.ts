@@ -583,6 +583,7 @@ export class LiveSession {
         return false;
       }
       if (key === "k") {
+        // matchShortcut leaves ⌘K to the terminal while it has focus; elsewhere it searches hosts.
         if (down) this.term.clear();
         return false;
       }
