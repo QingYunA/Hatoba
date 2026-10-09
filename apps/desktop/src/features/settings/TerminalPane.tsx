@@ -4,6 +4,7 @@ import { Group } from "@/components/layout";
 import { PopupSelect } from "@/components/overlay";
 import { useT } from "@/i18n";
 import type { TerminalSettings } from "@/ipc/types";
+import { isImeEvent } from "@/lib/ime";
 import { Pane, SettingRow, type PaneProps } from "./shared";
 import s from "./TerminalPane.module.css";
 
@@ -45,7 +46,7 @@ export function TerminalPane({ settings, updateTerminal }: PaneProps) {
               placeholder={t("settings.term.fontPlaceholder")}
               onChange={(e) => setFont(e.target.value)}
               onBlur={commitFont}
-              onKeyDown={(e) => e.key === "Enter" && commitFont()}
+              onKeyDown={(e) => e.key === "Enter" && !isImeEvent(e) && commitFont()}
             />
           </div>
         </SettingRow>

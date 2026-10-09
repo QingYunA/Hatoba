@@ -11,6 +11,7 @@ import { useT } from "@/i18n";
 import { api, toAppError } from "@/ipc/api";
 import type { AuthKind, HostInput, HostView, KeyView, QuickTarget } from "@/ipc/types";
 import { cx } from "@/lib/cx";
+import { isImeEvent } from "@/lib/ime";
 import { ForwardsSection } from "./ForwardsSection";
 import { useHostsUi } from "./ui";
 import s from "./HostEditPage.module.css";
@@ -237,7 +238,7 @@ export function HostEditPage({
   // Enter in a single-line field saves (tag input handles its own Enter).
   const onKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
-    if (e.key === "Enter" && !e.defaultPrevented && target.tagName === "INPUT" && target.getAttribute("type") !== "checkbox") {
+    if (e.key === "Enter" && !isImeEvent(e) && !e.defaultPrevented && target.tagName === "INPUT" && target.getAttribute("type") !== "checkbox") {
       e.preventDefault();
       void save();
     }
