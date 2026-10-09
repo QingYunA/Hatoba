@@ -1,5 +1,5 @@
-//! Authentication of one SSH hop: password, private key, agent, none and
-//! keyboard-interactive (SSH-01, SSH-02, SSH-08, SSH-09).
+//! Authentication of one SSH hop: password, private key, agent, none,
+//! keyboard-interactive, ask and agent-then-ask (SSH-01, SSH-02, SSH-08, SSH-09).
 
 use std::sync::Arc;
 
@@ -24,6 +24,7 @@ const MAX_KI_ROUNDS: usize = 10;
 
 pub(crate) struct AuthContext<'a> {
     pub host: &'a str,
+    pub port: u16,
     pub username: &'a str,
     pub interactive: Option<&'a Arc<dyn KeyboardInteractive>>,
     pub clock: &'a Arc<ConnectClock>,
@@ -74,7 +75,102 @@ pub(crate) async fn authenticate(
             finish(handle, ctx, result, "the server rejected the private key").await
         }
         AuthMethod::Agent => agent_auth(handle, ctx).await,
+        AuthMethod::AgentThenAsk => agent_then_ask(handle, ctx, &offered).await,
+        AuthMethod::Ask => ask(handle, ctx, &offered).await,
     }
+}
+
+/// Start of the error [`AuthMethod::AgentThenAsk`] fails with when the server hangs up while the
+/// ssh-agent identities are tried, as OpenSSH does after `MaxAuthTries` rejections.
+/// [`crate::connect`] then connects again with [`AuthMethod::Ask`].
+const AGENT_EXHAUSTED: &str =
+    "the server closed the connection while ssh-agent identities were tried";
+
+/// Whether `err` is the [`AGENT_EXHAUSTED`] failure of [`AuthMethod::AgentThenAsk`].
+pub(crate) fn agent_exhausted(err: &SshError) -> bool {
+    err.kind == SshErrorKind::Disconnected && err.message.starts_with(AGENT_EXHAUSTED)
+}
+
+/// [`AuthMethod::AgentThenAsk`]: the ssh-agent identities, then [`ask`].
+async fn agent_then_ask(
+    handle: &mut Handle<ClientHandler>,
+    ctx: &AuthContext<'_>,
+    offered: &MethodSet,
+) -> Result<(), SshError> {
+    let exhausted =
+        |e: SshError| SshError::disconnected(format!("{AGENT_EXHAUSTED}: {}", e.message));
+    let mut rejected = false;
+    if offered.contains(&MethodKind::PublicKey) {
+        match agent_auth(handle, ctx).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind == SshErrorKind::Disconnected => return Err(exhausted(e)),
+            // No agent, an empty one, or no identity accepted: go on with the next method.
+            Err(e) if matches!(e.kind, SshErrorKind::AuthFailed | SshErrorKind::Other) => {
+                tracing::debug!("ssh-agent did not authenticate: {}", e.message);
+                rejected = e.kind == SshErrorKind::AuthFailed;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    match ask(handle, ctx, offered).await {
+        // Some servers hang up on the first request after the last rejection they allow.
+        Err(e) if rejected && e.kind == SshErrorKind::Disconnected => Err(exhausted(e)),
+        done => done,
+    }
+}
+
+/// [`AuthMethod::Ask`]. Like `ssh`, keyboard-interactive comes first, since the server's own
+/// prompts may ask for more than a password; when it fails, a password is asked if the server
+/// also takes one.
+async fn ask(
+    handle: &mut Handle<ClientHandler>,
+    ctx: &AuthContext<'_>,
+    offered: &MethodSet,
+) -> Result<(), SshError> {
+    let password = offered.contains(&MethodKind::Password);
+    if offered.contains(&MethodKind::KeyboardInteractive) {
+        match keyboard_interactive(handle, ctx, None).await {
+            Err(e) if e.kind == SshErrorKind::AuthFailed && password => {
+                tracing::debug!("keyboard-interactive failed: {}", e.message);
+            }
+            done => return done,
+        }
+    }
+    if !password {
+        return Err(auth_failed(
+            "the server takes no password or keyboard-interactive login",
+            Some(offered),
+        ));
+    }
+    let Some(callback) = ctx.interactive else {
+        return Err(SshError::new(
+            SshErrorKind::AuthFailed,
+            "the server asks for a password but no handler is available",
+        ));
+    };
+    let request = PromptRequest {
+        host: ctx.host.to_owned(),
+        port: ctx.port,
+        username: ctx.username.to_owned(),
+        password: true,
+        name: String::new(),
+        instructions: String::new(),
+        prompts: vec![Prompt {
+            text: "Password: ".to_owned(),
+            echo: false,
+        }],
+    };
+    let answers = {
+        let _pause = ctx.clock.pause();
+        callback.respond(request).await
+    };
+    let Some(password) = answers.and_then(|a| a.into_iter().next()) else {
+        return Err(SshError::cancelled());
+    };
+    let result = handle
+        .authenticate_password(ctx.username, password.as_str())
+        .await?;
+    finish(handle, ctx, result, "the server rejected the password").await
 }
 
 async fn password_auth(
@@ -126,13 +222,18 @@ fn fail_if_disconnected(ctx: &AuthContext<'_>, remaining: &MethodSet) -> Result<
     if !remaining.is_empty() || !ctx.shared.is_closed() {
         return Ok(());
     }
-    Err(match ctx.shared.reason() {
+    Err(connection_lost(ctx))
+}
+
+/// Why the connection ended during authentication.
+fn connection_lost(ctx: &AuthContext<'_>) -> SshError {
+    match ctx.shared.reason() {
         Some(CloseReason::Error(e)) => e.with_context("connection lost during authentication"),
         Some(CloseReason::Remote(msg)) => {
             SshError::disconnected(format!("{msg} (during authentication)"))
         }
         _ => SshError::disconnected("the server closed the connection during authentication"),
-    })
+    }
 }
 
 fn auth_failed(what: &str, offered: Option<&MethodSet>) -> SshError {
@@ -193,6 +294,9 @@ async fn keyboard_interactive(
                     };
                     let request = PromptRequest {
                         host: ctx.host.to_owned(),
+                        port: ctx.port,
+                        username: ctx.username.to_owned(),
+                        password: false,
                         name,
                         instructions,
                         prompts: prompts
@@ -281,7 +385,16 @@ async fn agent_auth(
                 } = &result
                 {
                     fail_if_disconnected(ctx, remaining_methods)?;
+                    // The handler may not have heard of the hang-up yet.
+                    if remaining_methods.is_empty() && handle.is_closed() {
+                        return Err(connection_lost(ctx));
+                    }
                 }
+            }
+            // A server that hangs up after too many rejections (OpenSSH's `MaxAuthTries`)
+            // fails the next identity this way.
+            Err(_) if handle.is_closed() || ctx.shared.is_closed() => {
+                return Err(connection_lost(ctx));
             }
             Err(e) => tracing::debug!("ssh-agent identity failed: {e}"),
         }

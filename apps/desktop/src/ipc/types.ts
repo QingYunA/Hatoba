@@ -240,11 +240,23 @@ export interface ConnectOptions {
   passphrase: string | null;
 }
 
+/**
+ * A target typed into the hosts search field (quick connect, HOST-12). It is never saved as a host;
+ * once connected it joins the device-local recent list.
+ */
+export interface QuickTarget {
+  /** DNS name or IP address, IPv6 without brackets. */
+  address: string;
+  port: number;
+  username: string;
+}
+
 export type SessionState = "connecting" | "connected" | "disconnected" | "failed";
 
 export interface SessionStateEvent {
   session_id: string;
-  host_id: string;
+  /** null for a quick-connect session (HOST-12). */
+  host_id: string | null;
   state: SessionState;
   /** Connection round-trip time, once connected. */
   latency_ms: number | null;
@@ -273,6 +285,10 @@ export interface AuthPrompt {
   name: string;
   instructions: string;
   prompts: { prompt: string; echo: boolean }[];
+  /** The login password of a quick connection (HOST-12): asked like SSH-03 and answered with one value. */
+  password: boolean;
+  /** `user@host:port` of the hop that asks. */
+  target: string;
 }
 
 export interface TestResult {
@@ -289,6 +305,8 @@ export interface TestResult {
 export const FRAME_DATA = 0;
 export const FRAME_CLOSED = 1;
 export const FRAME_ERROR = 2;
+/** The backend session id, sent before connecting, so a tab can answer its prompts if it closes. */
+export const FRAME_SESSION = 3;
 
 // ───────────────────────── Port forwarding (FWD-01/02) ─────────────────────────
 
@@ -775,6 +793,11 @@ export interface AiTurnContext {
   effort: AiEffort | null;
   /** The tab's host; the next message moves the conversation to it (AI-09). */
   host_id: string | null;
+  /**
+   * The tab's quick-connect target when it has no saved host (HOST-12): the next message moves the
+   * conversation off its saved host, and the request names the target instead.
+   */
+  target: QuickTarget | null;
   /** A connected terminal tab is attached; false offers no terminal tools (AI-09). */
   tab: boolean;
   /** The tab's SSH session while it is connected; the system prompt states its server's identification string (§13.1). */

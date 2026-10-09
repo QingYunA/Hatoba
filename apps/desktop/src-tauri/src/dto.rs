@@ -192,6 +192,16 @@ pub struct ConnectOptions {
     pub passphrase: Option<String>,
 }
 
+/// A target typed into the hosts search field (quick connect, HOST-12). It is never saved as a
+/// host; once connected it joins the device-local recent list.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct QuickTarget {
+    /// DNS name or IP address, IPv6 without brackets.
+    pub address: String,
+    pub port: u16,
+    pub username: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
@@ -205,7 +215,8 @@ pub enum SessionState {
 #[tauri_specta(event_name = "ssh://state")]
 pub struct SessionStateEvent {
     pub session_id: String,
-    pub host_id: String,
+    /// `None` for a quick-connect session (HOST-12).
+    pub host_id: Option<String>,
     pub state: SessionState,
     pub latency_ms: Option<u32>,
     pub error: Option<crate::error::AppError>,
@@ -247,6 +258,11 @@ pub struct AuthPrompt {
     pub name: String,
     pub instructions: String,
     pub prompts: Vec<AuthPromptField>,
+    /// The login password of a quick connection (HOST-12), asked like an "ask every time"
+    /// password (SSH-03) rather than as a server prompt; answered with one value.
+    pub password: bool,
+    /// `user@host:port` of the hop that asks.
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -1135,6 +1151,9 @@ pub struct AiTurnContext {
     pub effort: Option<AiEffort>,
     /// The tab's host; the next message moves the conversation to it (AI-09).
     pub host_id: Option<String>,
+    /// The tab's quick-connect target when it has no saved host (HOST-12): the next message
+    /// moves the conversation off its saved host, and the request names the target instead.
+    pub target: Option<QuickTarget>,
     /// A connected terminal tab is attached; `false` offers no terminal tools (AI-09).
     pub tab: bool,
     /// The tab's SSH session while it is connected, whose server's identification string the

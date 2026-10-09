@@ -86,9 +86,9 @@ const STATUS_DOT: Record<TabStatus, string> = {
   disconnected: "var(--fg3)",
 };
 
-/** HOST-11: the tab host's OS, with the session status as the badge. */
-function TabOsIcon({ hostId, status }: { hostId: string; status: TabStatus }) {
-  const os = useVaultData((st) => st.hosts.find((h) => h.id === hostId)?.os ?? null);
+/** HOST-11: the tab host's OS, with the session status as the badge. A quick connection has no host, so no OS. */
+function TabOsIcon({ hostId, status }: { hostId: string | null; status: TabStatus }) {
+  const os = useVaultData((st) => (hostId ? (st.hosts.find((h) => h.id === hostId)?.os ?? null) : null));
   return <OsIcon os={os} badge={STATUS_DOT[status]} />;
 }
 

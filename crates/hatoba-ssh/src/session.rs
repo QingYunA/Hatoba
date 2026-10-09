@@ -40,6 +40,14 @@ pub enum AuthMethod {
     },
     /// Keys held by ssh-agent (`SSH_AUTH_SOCK` / Windows OpenSSH pipe).
     Agent,
+    /// What the `ssh` command does without saved credentials: the ssh-agent identities
+    /// (skipped when no agent runs), then [`AuthMethod::Ask`]. When the server hangs up while
+    /// the agent identities are tried (too many authentication failures), [`connect`]
+    /// connects again with [`AuthMethod::Ask`].
+    AgentThenAsk,
+    /// The server's keyboard-interactive prompts, or else (also when they fail) the login
+    /// password asked through [`ConnectConfig::keyboard_interactive`] and used once.
+    Ask,
     /// No credentials (only useful for servers that allow it).
     None,
 }
@@ -50,6 +58,8 @@ impl fmt::Debug for AuthMethod {
             Self::Password(_) => "AuthMethod::Password(<redacted>)",
             Self::PrivateKey { .. } => "AuthMethod::PrivateKey { <redacted> }",
             Self::Agent => "AuthMethod::Agent",
+            Self::AgentThenAsk => "AuthMethod::AgentThenAsk",
+            Self::Ask => "AuthMethod::Ask",
             Self::None => "AuthMethod::None",
         })
     }
@@ -208,6 +218,7 @@ async fn connect_hop(
         clock.set_phase(Phase::Auth);
         let ctx = AuthContext {
             host: spec.host,
+            port: spec.port,
             username: spec.username,
             interactive,
             clock: &clock,
@@ -261,7 +272,7 @@ pub async fn connect(
     let mut last: Option<Hop> = None;
     for (i, spec) in specs.iter().enumerate() {
         let via = jumps.last().map(|j| &j.handle);
-        let hop = connect_hop(
+        let mut hop = connect_hop(
             &config,
             spec,
             via,
@@ -269,8 +280,26 @@ pub async fn connect(
             interactive,
             cfg.connect_timeout,
         )
-        .await
-        .map_err(|e| {
+        .await;
+        if let Err(e) = &hop
+            && auth::agent_exhausted(e)
+        {
+            tracing::debug!("connecting again without ssh-agent: {}", e.message);
+            let ask = HopSpec {
+                auth: &AuthMethod::Ask,
+                ..*spec
+            };
+            hop = connect_hop(
+                &config,
+                &ask,
+                via,
+                &verifier,
+                interactive,
+                cfg.connect_timeout,
+            )
+            .await;
+        }
+        let hop = hop.map_err(|e| {
             if total > 1 {
                 e.with_context(&format!(
                     "hop {}/{} ({}:{})",

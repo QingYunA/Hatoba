@@ -1,11 +1,12 @@
-import { hostById } from "@/app/data";
+import { hostById, useVaultData } from "@/app/data";
 import { useApp } from "@/app/store";
 import { useTabs } from "@/app/tabs";
 import { toast } from "@/components/overlay";
+import { formatTarget, savedHostFor } from "@/features/hosts/quickConnect";
 import { t } from "@/i18n";
-import type { HostView } from "@/ipc/types";
+import type { HostView, QuickTarget } from "@/ipc/types";
 import { startSessionListeners } from "./listeners";
-import { askSecret } from "./prompts";
+import { askSecret, askUsername } from "./prompts";
 import { ensureSession, getSession, type Credentials } from "./session";
 
 const NONE: Credentials = { password: null, passphrase: null };
@@ -35,17 +36,32 @@ export async function connectHost(hostId: string): Promise<void> {
   }
   const creds = await collectCredentials(host);
   if (!creds) return;
-  const tabId = useTabs.getState().openSession(hostId, host.name);
-  const session = ensureSession(tabId, hostId);
+  const tabId = useTabs.getState().openSession({ hostId, target: null }, host.name);
+  const session = ensureSession(tabId);
   // The view connects as soon as it has measured the terminal size.
   session?.setCredentials(creds);
+}
+
+/**
+ * Quick connect (HOST-12): open a terminal tab on a target typed into the hosts search field, without
+ * saving a host. Without a user name, ask for one first.
+ */
+export async function connectTarget(typed: { address: string; port: number; username: string | null }): Promise<void> {
+  startSessionListeners();
+  const username = typed.username ?? (await askUsername(formatTarget(typed)))?.trim();
+  if (!username) return;
+  const target: QuickTarget = { address: typed.address, port: typed.port, username };
+  useTabs.getState().openSession({ hostId: null, target }, `${username}@${target.address}`);
 }
 
 /** Retry / reconnect a tab in place (prompting again for "ask every time" hosts). */
 export async function reconnectSession(tabId: string): Promise<void> {
   const session = getSession(tabId);
-  const host = session ? hostById(session.hostId) : undefined;
-  if (!session) return;
+  if (!session || session.status === "connecting") return;
+  // A quick connection saved as a host since (Save as Host…) reconnects as that host.
+  const saved = session.target ? savedHostFor(useVaultData.getState().hosts, session.target) : undefined;
+  if (saved) session.adoptHost(saved);
+  const host = hostById(session.hostId);
   await session.reconnect(async () => (host ? collectCredentials(host) : NONE));
 }
 
@@ -57,9 +73,15 @@ export async function closeSessionTab(tabId: string): Promise<void> {
 }
 
 /** Jump to the host's edit page (from the error card / menu). */
-export function editSessionHost(hostId: string) {
+export function editSessionHost(hostId: string | null) {
   const host = hostById(hostId);
   if (!host) return;
-  useApp.getState().navigate({ kind: "host-edit", hostId, groupId: host.group_id, back: { kind: "all" } });
+  useApp.getState().navigate({ kind: "host-edit", hostId: host.id, groupId: host.group_id, back: { kind: "all" } });
+  useTabs.getState().activate("home");
+}
+
+/** "Save as Host…" for a quick connection: a new host, filled in with its target (HOST-12). */
+export function saveTargetAsHost(target: QuickTarget) {
+  useApp.getState().navigate({ kind: "host-edit", hostId: null, groupId: null, back: { kind: "all" }, prefill: target });
   useTabs.getState().activate("home");
 }
