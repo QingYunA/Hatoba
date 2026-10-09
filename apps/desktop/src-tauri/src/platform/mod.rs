@@ -3,6 +3,7 @@
 pub mod biometric;
 pub mod power;
 pub mod secrets;
+pub mod shell_path;
 pub mod system;
 pub mod window;
 
