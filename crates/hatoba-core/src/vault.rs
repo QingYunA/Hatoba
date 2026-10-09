@@ -2057,7 +2057,7 @@ mod tests {
             r#""type":"host""#,
             r#""type":"key""#,
             r#""type":"settings""#,
-            "Cascadia Mono",
+            crate::model::DEFAULT_FONT_FAMILY,
         ];
         for (name, bytes) in &blobs {
             for needle in needles {

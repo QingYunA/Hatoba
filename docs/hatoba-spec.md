@@ -361,7 +361,7 @@ interface McpServer {            // P2, §13.9
 interface Settings {             // Fixed ID "settings", a single item
   type: "settings";
   terminal: {
-    font_family: string;
+    font_family: string;        // "Cascadia Mono" for a new vault, "Menlo" when created on macOS
     font_size: number;
     theme: "system" | "light" | "dark";
     cursor_style: "block" | "bar" | "underline";

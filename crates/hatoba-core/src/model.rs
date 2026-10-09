@@ -797,10 +797,20 @@ pub struct TerminalSettings {
     pub confirm_multiline_paste: Option<bool>,
 }
 
+/// The terminal font a new vault starts with. Cascadia Mono comes with Windows (WIN-02), and
+/// macOS has no family of that name; Menlo is on every macOS, while "SF Mono" is not a family
+/// that WebKit can use. The value syncs like any other, and a device that lacks the font falls
+/// back to its own monospace stack.
+pub const DEFAULT_FONT_FAMILY: &str = if cfg!(target_os = "macos") {
+    "Menlo"
+} else {
+    "Cascadia Mono"
+};
+
 impl Default for TerminalSettings {
     fn default() -> Self {
         Self {
-            font_family: "Cascadia Mono".to_owned(),
+            font_family: DEFAULT_FONT_FAMILY.to_owned(),
             font_size: 13,
             theme: ThemeMode::Dark,
             cursor_style: CursorStyle::Block,
@@ -1781,7 +1791,15 @@ mod tests {
     #[test]
     fn settings_defaults_match_the_spec() {
         let s = Settings::default();
-        assert_eq!(s.terminal.font_family, "Cascadia Mono");
+        assert_eq!(s.terminal.font_family, DEFAULT_FONT_FAMILY);
+        assert_eq!(
+            DEFAULT_FONT_FAMILY,
+            if cfg!(target_os = "macos") {
+                "Menlo"
+            } else {
+                "Cascadia Mono"
+            }
+        );
         assert_eq!(s.terminal.font_size, 13);
         assert_eq!(s.terminal.theme, ThemeMode::Dark);
         assert_eq!(s.terminal.cursor_style, CursorStyle::Block);
