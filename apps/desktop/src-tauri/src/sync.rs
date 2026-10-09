@@ -495,18 +495,8 @@ pub fn spawn_scheduler(app: AppHandle) {
 
 /// Device name and platform shown in the device list (stored encrypted on the server).
 pub fn device_info() -> hatoba_core::platform::DeviceInfo {
-    let name = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .ok()
-        .filter(|n| !n.trim().is_empty())
-        .or_else(|| {
-            std::fs::read_to_string("/etc/hostname")
-                .ok()
-                .map(|s| s.trim().to_owned())
-        })
-        .unwrap_or_else(|| "Hatoba".to_owned());
     hatoba_core::platform::DeviceInfo {
-        name,
+        name: crate::platform::system::device_name(),
         platform: crate::platform::os_label(),
     }
 }

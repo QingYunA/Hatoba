@@ -32,7 +32,10 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<(WebviewWindow, bool
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(TRAFFIC_LIGHT_X, TRAFFIC_LIGHT_Y));
+        .traffic_light_position(tauri::LogicalPosition::new(
+            TRAFFIC_LIGHT_X,
+            TRAFFIC_LIGHT_Y,
+        ));
 
     // The page paints a solid background unless Mica is active, so a transparent window is safe on
     // Windows 10 too; it is required for Mica to show through on Windows 11.
