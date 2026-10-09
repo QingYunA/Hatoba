@@ -2304,6 +2304,7 @@ dependencies = [
  "hatoba-core",
  "hatoba-ssh",
  "keyring",
+ "objc2-foundation",
  "reqwest",
  "rustls",
  "serde",

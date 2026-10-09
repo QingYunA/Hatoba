@@ -1,5 +1,5 @@
 //! System facts that each platform reports differently: the name this device shows in the sync
-//! device list.
+//! device list, and the user's language.
 
 /// The first candidate that has text, trimmed.
 fn first_non_blank(candidates: impl IntoIterator<Item = Option<String>>) -> Option<String> {
@@ -45,6 +45,32 @@ fn computer_name() -> Option<String> {
     None
 }
 
+/// The user's preferred language, lowercase, e.g. `zh-hans-cn` or `en_us.utf-8`; empty when
+/// unknown. macOS asks the system, because a Finder-launched app has no `LANG` or `LC_ALL`.
+pub fn locale() -> String {
+    first_non_blank([preferred_language(), env_locale()])
+        .unwrap_or_default()
+        .to_lowercase()
+}
+
+fn env_locale() -> Option<String> {
+    std::env::var("LANG")
+        .or_else(|_| std::env::var("LC_ALL"))
+        .ok()
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_language() -> Option<String> {
+    objc2_foundation::NSLocale::preferredLanguages()
+        .firstObject()
+        .map(|lang| lang.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preferred_language() -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,6 +87,14 @@ mod tests {
             Some("host".into())
         );
         assert_eq!(pick([Some(""), None, Some("  ")]), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_reports_a_preferred_language() {
+        let lang = preferred_language().expect("macOS always has a preferred language");
+        assert!(lang.len() >= 2, "{lang}");
+        assert_eq!(locale(), lang.to_lowercase());
     }
 
     #[test]

@@ -353,7 +353,7 @@ fn conflict_suffix(app: &AppHandle) -> &'static str {
         Ok(Language::ZhCn) => "zh".to_owned(),
         Ok(Language::Ja) => "ja".to_owned(),
         Ok(Language::En) => "en".to_owned(),
-        _ => sys_locale(),
+        _ => crate::platform::system::locale(),
     };
     if lang.starts_with("zh") {
         "（冲突副本）"
@@ -362,13 +362,6 @@ fn conflict_suffix(app: &AppHandle) -> &'static str {
     } else {
         " (conflict copy)"
     }
-}
-
-fn sys_locale() -> String {
-    std::env::var("LANG")
-        .or_else(|_| std::env::var("LC_ALL"))
-        .unwrap_or_default()
-        .to_lowercase()
 }
 
 /// Runs one sync round now. Errors are reflected in the status and returned.
