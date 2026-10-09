@@ -26,7 +26,7 @@ The bar above the terminal shows the connection state, the target `user@host:por
 
 ## Menus
 
-The tab menu (**More actions**) and the right-click menu share most entries. Right-click shows the menu only when **Right-Click in Terminal** is set to **Show context menu** (see Settings below); by default right-click copies the selection, or pastes when nothing is selected. A program that tracks the mouse (vim, tmux) gets the right click itself unless Shift is held.
+The tab menu (**More actions**) and the right-click menu share most entries. Right-click shows the menu when **Right-Click in Terminal** is set to **Show context menu** (see Settings below), the default on macOS; elsewhere right-click by default copies the selection, or pastes when nothing is selected. A program that tracks the mouse (vim, tmux) gets the right click itself unless Shift is held.
 
 | en | zh-CN | ja |
 |---|---|---|
