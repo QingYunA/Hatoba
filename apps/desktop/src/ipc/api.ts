@@ -60,6 +60,7 @@ import type {
   TagCount,
   TestResult,
   UpdateCheck,
+  UpdateProgress,
   UpgradeDefaults,
   UpgradePlan,
   UpgradeTarget,
@@ -76,8 +77,13 @@ export type Unlisten = () => void;
  */
 export interface HatobaApi {
   app_info(): Promise<AppInfo>;
-  /** Asks GitHub Releases for the newest stable release. A repository without releases is up to date. */
+  /** Asks for a newer release (spec §11). Without a release that carries update information, Hatoba is up to date. */
   update_check(): Promise<UpdateCheck>;
+  /**
+   * Downloads the update the last check found, checks its signature, and installs it. Hatoba then
+   * closes and the installer starts the new version, so this settles only when that fails.
+   */
+  update_install(onProgress: (p: UpdateProgress) => void): Promise<void>;
 
   // vault
   vault_status(): Promise<VaultStatus>;
