@@ -116,8 +116,9 @@ fn run_login_shell(shell: &str, marker: &str, timeout: std::time::Duration) -> O
 }
 
 /// The process `PATH` with the Homebrew directories (Apple Silicon, then Intel) added at the end
-/// when missing.
-#[cfg(any(target_os = "macos", test))]
+/// when missing. `split_paths` and `join_paths` use the platform's separator, so the tests that
+/// spell out `:` run on Unix only.
+#[cfg(any(target_os = "macos", all(test, unix)))]
 fn fallback_path(process_path: Option<&OsStr>) -> std::ffi::OsString {
     let mut dirs: Vec<std::path::PathBuf> = process_path
         .map(|p| std::env::split_paths(p).collect())
@@ -153,6 +154,7 @@ mod tests {
         assert_eq!(parse_marked(&format!("{M}  {M}"), M), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_fallback_adds_the_homebrew_directories_once() {
         let fallback = |p: Option<&str>| fallback_path(p.map(OsStr::new));
