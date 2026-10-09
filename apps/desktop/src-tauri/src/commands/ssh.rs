@@ -1,8 +1,11 @@
-//! Terminal sessions (spec §7.1, §7.2, §10.3), including quick connect (HOST-12).
+//! Terminal sessions (spec §7.1, §7.2, §10.3), including quick connect (HOST-12) and the
+//! server's resource usage (TERM-12).
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
-use hatoba_core::model::Item;
+use hatoba_core::model::{Host, HostProxy, Item};
 use hatoba_ssh::{AuthMethod, ConnectConfig, ShellEvent, ShellOptions};
 use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tauri::{AppHandle, State};
@@ -12,11 +15,12 @@ use zeroize::Zeroizing;
 
 use crate::commands::hosts::host_from_input;
 use crate::commands::quick;
+use crate::convert::stats_view;
 use crate::dto::{
-    ConnectOptions, HostInput, QuickTarget, SessionState, SessionStateEvent, TestResult,
+    ConnectOptions, HostInput, QuickTarget, SessionState, SessionStateEvent, StatsEvent, TestResult,
 };
 use crate::error::{AppError, AppResult};
-use crate::ssh::{LiveSession, Overrides, build_config, connect_with};
+use crate::ssh::{LiveSession, Overrides, build_config, connect_with, resolve_proxy};
 use crate::state::{AppState, now_ms};
 
 const FRAME_DATA: u8 = 0;
@@ -25,6 +29,10 @@ const FRAME_ERROR: u8 = 2;
 /// The session id, sent before connecting: the tab can then answer the session's host-key and
 /// login prompts for itself if it closes while they are open.
 const FRAME_SESSION: u8 = 3;
+/// How often the status bar's resource usage is read (TERM-12).
+const STATS_INTERVAL: Duration = Duration::from_secs(2);
+/// The id of the next `ssh_stats_start`.
+static NEXT_STATS_ID: AtomicU64 = AtomicU64::new(1);
 
 /// One terminal frame on the per-session channel: tag byte + payload. Sent through Tauri's raw
 /// binary IPC path (an `ArrayBuffer` in the WebView), never as a JSON number array (§10.3).
@@ -91,16 +99,25 @@ pub async fn ssh_connect(
 ) -> AppResult<String> {
     let session_id = uuid::Uuid::now_v7().to_string();
     let _ = channel.send(TermFrame::new(FRAME_SESSION, session_id.as_bytes()));
-    let cfg = state.with_unlocked(|v| {
+    let (cfg, env) = state.with_unlocked(|v| {
         let host = v
             .get(&host_id)
             .and_then(Item::as_host)
             .cloned()
             .ok_or_else(|| AppError::not_found("host"))?;
-        build_config(v, &host, Some(&host_id), Some(&overrides(&options)))
+        let cfg = build_config(v, &host, Some(&host_id), Some(&overrides(&options)))?;
+        Ok((cfg, host_env(&host)))
     })?;
-    let (live, events) =
-        open_terminal(&app, &state, cfg, &session_id, Some(&host_id), &options).await?;
+    let (live, events) = open_terminal(
+        &app,
+        &state,
+        cfg,
+        env,
+        &session_id,
+        Some(&host_id),
+        &options,
+    )
+    .await?;
     crate::commands::forwards::start_auto(&app, &session_id, &live, &host_id).await;
     pump(
         app,
@@ -127,17 +144,19 @@ pub async fn ssh_connect_target(
     channel: Channel<TermFrame>,
 ) -> AppResult<String> {
     let target = quick::validate(target)?;
-    // Known hosts live in the vault (SSH-04).
-    state.with_unlocked(|_| Ok(()))?;
+    // Known hosts live in the vault (SSH-04). The device's default proxy applies (SSH-13).
+    let proxy = state.with_unlocked(|v| resolve_proxy(v, &HostProxy::DeviceDefault))?;
     let session_id = uuid::Uuid::now_v7().to_string();
     let _ = channel.send(TermFrame::new(FRAME_SESSION, session_id.as_bytes()));
-    let cfg = ConnectConfig::new(
+    let mut cfg = ConnectConfig::new(
         target.address.clone(),
         target.port,
         target.username.clone(),
         AuthMethod::AgentThenAsk,
     );
-    let (live, events) = open_terminal(&app, &state, cfg, &session_id, None, &options).await?;
+    cfg.proxy = proxy;
+    let (live, events) =
+        open_terminal(&app, &state, cfg, Vec::new(), &session_id, None, &options).await?;
     if let Err(e) = state.with_unlocked(|v| quick::remember(v, &target)) {
         tracing::debug!("recent target not recorded: {}", e.detail);
     }
@@ -145,12 +164,23 @@ pub async fn ssh_connect_target(
     Ok(session_id)
 }
 
-/// Connects, opens the shell and registers the session, reporting each step as an
-/// `ssh://state` event.
+/// The variables a host's shell asks the server to set (SSH-14). Only the terminal's shell gets
+/// them; the commands Hatoba runs itself (resource usage, the AI's `run_command`, key deployment)
+/// and SFTP run in the server's default environment.
+fn host_env(host: &Host) -> Vec<(String, String)> {
+    host.env
+        .iter()
+        .map(|v| (v.name.clone(), v.value.clone()))
+        .collect()
+}
+
+/// Connects, opens the shell with the host's environment variables after the defaults, and
+/// registers the session, reporting each step as an `ssh://state` event.
 async fn open_terminal(
     app: &AppHandle,
     state: &AppState,
     cfg: ConnectConfig,
+    env: Vec<(String, String)>,
     session_id: &str,
     host_id: Option<&str>,
     options: &ConnectOptions,
@@ -169,7 +199,8 @@ async fn open_terminal(
         cols: options.cols.clamp(10, 1000),
         rows: options.rows.clamp(2, 500),
         ..ShellOptions::default()
-    };
+    }
+    .with_env(env);
     let (shell, events) = match session.open_shell(shell_opts).await {
         Ok(v) => v,
         Err(e) => {
@@ -283,6 +314,49 @@ pub async fn ssh_resize(
         .resize(cols.clamp(10, 1000), rows.clamp(2, 500))
         .await;
     Ok(())
+}
+
+/// Starts reading the server's resource usage for the terminal's status bar (TERM-12), in
+/// place of a sampling already running on the session. Readings stream on `channel` until
+/// `ssh_stats_stop` with the returned id, the end of the session, or the WebView dropping the
+/// channel. When starts overlap, the one that arrived last keeps running.
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_stats_start(
+    state: State<'_, AppState>,
+    session_id: String,
+    channel: Channel<StatsEvent>,
+) -> AppResult<u64> {
+    // Taken before the round trip to the server, so ids follow the order the starts arrived in.
+    let id = NEXT_STATS_ID.fetch_add(1, Ordering::Relaxed);
+    let live = state.ssh.get(&session_id)?;
+    let (handle, mut events) = live.session.open_stats(STATS_INTERVAL).await?;
+    live.set_stats(id, handle);
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.recv().await {
+            let event = match event {
+                hatoba_ssh::StatsEvent::Stats(stats) => StatsEvent::Stats {
+                    stats: stats_view(*stats),
+                },
+                hatoba_ssh::StatsEvent::Unsupported(system) => StatsEvent::Unsupported { system },
+                hatoba_ssh::StatsEvent::Ended(err) => StatsEvent::Ended { error: err.into() },
+            };
+            // Dropping `events` once the WebView is gone stops the sampling.
+            if channel.send(event).is_err() {
+                break;
+            }
+        }
+    });
+    Ok(id)
+}
+
+/// Stops the sampling that `ssh_stats_start` returned `stats_id` for; a later one keeps running.
+#[tauri::command]
+#[specta::specta]
+pub fn ssh_stats_stop(state: State<'_, AppState>, session_id: String, stats_id: u64) {
+    if let Ok(live) = state.ssh.get(&session_id) {
+        live.stop_stats(stats_id);
+    }
 }
 
 #[tauri::command]

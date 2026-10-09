@@ -119,6 +119,7 @@ export default defineMessages({
     "err.no_worker_bundle": "这个版本的 Hatoba 没有内置同步 Worker，无法一键部署。请改用其他部署方式。",
     "err.ai": "AI 请求失败：{detail}",
     "err.ai_status": "服务商返回了 HTTP {status}：{detail}",
+    "err.update_signature": "下载的更新没有 Hatoba 的有效签名，已拒绝安装。",
 
     "ssh.err.dns": "找不到主机 {host}，请检查地址拼写或 DNS。",
     "ssh.err.refused": "{host}:{port} 拒绝了连接，SSH 服务可能没有运行，或端口不对。",
@@ -133,6 +134,10 @@ export default defineMessages({
     "ssh.err.channel": "无法打开会话通道。",
     "ssh.err.sftp": "SFTP 子系统不可用。",
     "ssh.err.cancelled": "连接已取消。",
+    "ssh.err.proxy_unreachable": "无法连接到代理。请确认代理正在运行，并且地址和端口正确。",
+    "ssh.err.proxy_auth": "代理要求用户名和密码，或者不接受已保存的用户名和密码。",
+    "ssh.err.proxy": "代理无法连接到 {host}:{port}。请检查代理的类型和规则。",
+    "ssh.err.proxy_missing": "这个连接使用的代理已被删除。请在主机设置或“设置 → 代理”中另选一个。",
     "ssh.err.other": "连接失败。",
 
     "key.err.unsupported_format": "不支持的私钥格式。请使用 OpenSSH、PEM 或 PuTTY (.ppk) 格式。",
@@ -265,6 +270,7 @@ export default defineMessages({
     "err.no_worker_bundle": "This build of Hatoba doesn’t include the sync Worker, so it can’t deploy it. Use another way to deploy.",
     "err.ai": "The AI request failed: {detail}",
     "err.ai_status": "The provider returned HTTP {status}: {detail}",
+    "err.update_signature": "The downloaded update isn’t signed by Hatoba, so it wasn’t installed.",
 
     "ssh.err.dns": "Can’t find the host {host}. Check the address or DNS.",
     "ssh.err.refused": "{host}:{port} refused the connection. The SSH service may not be running, or the port is wrong.",
@@ -279,6 +285,10 @@ export default defineMessages({
     "ssh.err.channel": "Couldn’t open a session channel.",
     "ssh.err.sftp": "The SFTP subsystem isn’t available.",
     "ssh.err.cancelled": "The connection was cancelled.",
+    "ssh.err.proxy_unreachable": "Can’t reach the proxy. Check that it’s running and that its address and port are right.",
+    "ssh.err.proxy_auth": "The proxy asks for a username and password, or didn’t accept the saved ones.",
+    "ssh.err.proxy": "The proxy couldn’t connect to {host}:{port}. Check the proxy’s type and rules.",
+    "ssh.err.proxy_missing": "The proxy this connection uses was deleted. Choose another one in the host’s settings or in Settings → Proxies.",
     "ssh.err.other": "The connection failed.",
 
     "key.err.unsupported_format": "Unsupported private key format. Use OpenSSH, PEM or PuTTY (.ppk).",
@@ -408,6 +418,7 @@ export default defineMessages({
     "err.no_worker_bundle": "このビルドの Hatoba には同期 Worker が含まれていないため、デプロイできません。別の方法でデプロイしてください。",
     "err.ai": "AI リクエストに失敗しました: {detail}",
     "err.ai_status": "プロバイダーが HTTP {status} を返しました: {detail}",
+    "err.update_signature": "ダウンロードしたアップデートに Hatoba の有効な署名がないため、インストールしませんでした。",
 
     "ssh.err.dns": "ホスト {host} が見つかりません。アドレスまたは DNS を確認してください。",
     "ssh.err.refused": "{host}:{port} に接続を拒否されました。SSH サービスが動いていないか、ポートが違う可能性があります。",
@@ -421,6 +432,10 @@ export default defineMessages({
     "ssh.err.io": "ネットワークの読み書きエラー。",
     "ssh.err.channel": "セッションチャネルを開けませんでした。",
     "ssh.err.sftp": "SFTP サブシステムを利用できません。",
+    "ssh.err.proxy_unreachable": "プロキシに接続できません。プロキシが動いているか、アドレスとポートが正しいか確認してください。",
+    "ssh.err.proxy_auth": "プロキシがユーザー名とパスワードを求めているか、保存されたものを受け入れませんでした。",
+    "ssh.err.proxy": "プロキシから {host}:{port} に接続できませんでした。プロキシの種類とルールを確認してください。",
+    "ssh.err.proxy_missing": "この接続で使うプロキシは削除されています。ホストの設定か「設定 → プロキシ」で別のものを選んでください。",
     "ssh.err.cancelled": "接続をキャンセルしました。",
     "ssh.err.other": "接続に失敗しました。",
 

@@ -41,6 +41,8 @@ pub enum ErrorCode {
     /// AI assistant (§13): a model provider or search provider failed. `http_status` has the
     /// status it answered with, when it answered; `detail` is its own message.
     Ai,
+    /// A downloaded update does not carry a valid signature from the release key (spec §11).
+    UpdateSignature,
     Cancelled,
     Io,
     Internal,
@@ -62,6 +64,14 @@ pub enum SshErrorKind {
     Channel,
     Sftp,
     Cancelled,
+    /// SSH-13: the proxy could not be reached.
+    ProxyUnreachable,
+    /// SSH-13: the proxy wants a username and password, or did not accept them.
+    ProxyAuth,
+    /// SSH-13: the proxy did not open the connection to the server.
+    Proxy,
+    /// SSH-13: the host or the device default names a proxy that was deleted.
+    ProxyMissing,
     Other,
 }
 
@@ -256,6 +266,9 @@ impl From<hatoba_ssh::SshError> for AppError {
             K::Channel => SshErrorKind::Channel,
             K::Sftp => SshErrorKind::Sftp,
             K::Cancelled => SshErrorKind::Cancelled,
+            K::ProxyUnreachable => SshErrorKind::ProxyUnreachable,
+            K::ProxyAuth => SshErrorKind::ProxyAuth,
+            K::Proxy => SshErrorKind::Proxy,
             _ => SshErrorKind::Other,
         };
         let code = match kind {

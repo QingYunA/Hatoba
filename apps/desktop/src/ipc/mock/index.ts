@@ -8,12 +8,14 @@ import type {
   HostView,
   KeyView,
   LocalPrefs,
+  ProxyView,
   QuickTarget,
   SshErrorKind,
   StarPrompt,
   SyncStatus,
   VaultStatus,
 } from "../types";
+import { ENV_MAX_VARS, envRows, envTooLarge, validateEnvRows } from "@/features/hosts/envVars";
 import { sameTarget } from "@/features/hosts/quickConnect";
 import { defaultRightClick, defaultTerminalFont } from "@/lib/platform";
 import { FRAME_CLOSED, FRAME_DATA, FRAME_SESSION } from "../types";
@@ -21,6 +23,7 @@ import { createAiMock } from "./ai";
 import { createAiExtensionsMock } from "./aiExtensions";
 import { createAiSettingsMock } from "./aiSettings";
 import * as D from "./data";
+import { mockStats } from "./data";
 import { FakeShell } from "./shell";
 
 /** `?ssh=<kind>`: every connection fails with this SSH error kind and a detail like the real one. */
@@ -31,22 +34,28 @@ const SSH_DEMO_DETAIL: Partial<Record<SshErrorKind, (address: string, port: numb
   unreachable: (a, p) => `connect to ${a}:${p}: network is unreachable`,
   auth_failed: () => "authentication failed: no method succeeded (tried publickey, password)",
   disconnected: () => "the server closed the connection during the handshake",
+  proxy_unreachable: () => "cannot reach the proxy 127.0.0.1:7890: connect to 127.0.0.1:7890: connection refused",
+  proxy_auth: () => "the proxy proxy.corp.example.com:3128 rejected the username or password (HTTP 407)",
+  proxy: (a, p) => `the proxy could not connect to ${a}:${p}: connection not allowed by its rules (0x02)`,
 };
 
 /**
  * In-browser stand-in for the Rust backend so the UI can be developed and reviewed with the
  * design's sample data (`pnpm dev`). URL parameters select demo states:
  *   ?state=onboarding | locked | empty      ?sync=none | syncing | offline | conflict | auth
- *   ?platform=windows | macos | linux       ?update=available | offline | error
+ *   ?platform=windows | macos | linux       ?update=available | badsig | dropped | offline | error
  *   ?deploy=fail | waiting | vault | foreign | nosub | accounts | permission | nobundle
  *   ?star=due
  *   ?worker=available | required | custom | app
- *   ?ssh=timeout | refused | dns | unreachable | auth_failed | disconnected
+ *   ?ssh=timeout | refused | dns | unreachable | auth_failed | disconnected | proxy_unreachable | proxy_auth | proxy
  * Quick connect (HOST-12) asks to trust a new host key once per address, then for the password
  * (anything but "wrong" is accepted); targets whose address contains "timeout" fail with a timeout.
  * Connecting to staging-web-02 always fails with a timeout; with `?ssh`, every host fails with that
  * SSH error kind (`?ssh=fail` or another value: a timeout), so the error card shows (SSH-05).
  * Without `?update`, the update check finds no release, as GitHub does before the first one.
+ * `available`, `badsig` and `dropped` find v0.2.0. Installing it downloads for a few seconds and
+ * then stays at "installing", where the real app closes; `badsig` fails the signature check and
+ * `dropped` loses the connection partway through the download.
  * The in-app deployment accepts any API token of 20 or more characters.
  * With `?star=due`, the star prompt's day has passed, so it shows after the first connection.
  * `?worker` shows a Worker update notice (§6.7, Upgrades): `available` on a Worker the app
@@ -73,6 +82,7 @@ export function createMockApi(): HatobaApi {
   let hosts: HostView[] = demo === "empty" ? [] : D.HOSTS.map((h) => ({ ...h }));
   let groups: GroupView[] = demo === "empty" ? [] : D.GROUPS.map((g) => ({ ...g }));
   let keys: KeyView[] = demo === "empty" ? [] : D.KEYS.map((k) => ({ ...k }));
+  let proxies: ProxyView[] = demo === "empty" ? [] : D.PROXIES.map((p) => ({ ...p }));
   let settings = structuredClone(D.SETTINGS);
   settings.terminal.font_family = defaultTerminalFont(platform);
   settings.terminal.right_click = defaultRightClick(platform);
@@ -96,6 +106,13 @@ export function createMockApi(): HatobaApi {
   let deployment: { handle: string; failed: boolean; waited: boolean; url: string | null; upgrade: boolean } | null = null;
   const listeners = new Map<string, Set<(p: unknown) => void>>();
   const shells = new Map<string, FakeShell>();
+  /** TERM-12: the mock resource usage of each session that shows it, by the id of its start. */
+  const statsTimers = new Map<string, { id: number; timer: ReturnType<typeof setInterval> }>();
+  let lastStatsId = 0;
+  const stopStats = (sid: string) => {
+    clearInterval(statsTimers.get(sid)?.timer);
+    statsTimers.delete(sid);
+  };
   let seq = 0;
 
   function makeSync(): SyncStatus {
@@ -146,6 +163,12 @@ export function createMockApi(): HatobaApi {
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const id = (p: string) => `${p}-${Date.now().toString(36)}-${(++seq).toString(36)}`;
 
+  function proxyViews(): ProxyView[] {
+    return proxies
+      .map((p) => ({ ...p, host_ids: hosts.filter((h) => h.proxy_mode === "proxy" && h.proxy_id === p.id).map((h) => h.id) }))
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  }
+
   function keyViews(): KeyView[] {
     return keys.map((k) => ({ ...k, used_by: hosts.filter((h) => h.auth_kind === "key" && h.key_id === k.id).map((h) => h.id) }));
   }
@@ -189,10 +212,23 @@ export function createMockApi(): HatobaApi {
     update_check: async () => {
       await delay(800);
       if (updateDemo === "offline") fail("sync_offline", "GitHub could not be reached");
-      if (updateDemo === "error") fail("internal", "GitHub answered HTTP 403");
-      if (updateDemo === "available")
-        return { current_version: version, latest_version: "0.2.0", release_url: "https://github.com/scarletkc/Hatoba/releases/tag/v0.2.0", update_available: true };
-      return { current_version: version, latest_version: null, release_url: null, update_available: false };
+      if (updateDemo === "error") fail("internal", "the update endpoint answered HTTP 403");
+      if (updateDemo === "available" || updateDemo === "badsig" || updateDemo === "dropped")
+        return { current_version: version, update: D.AVAILABLE_UPDATE };
+      return { current_version: version, update: null };
+    },
+    update_install: async (onProgress) => {
+      const total = 14_680_064;
+      for (let downloaded = 0; downloaded < total; downloaded += 524_288) {
+        if (updateDemo === "dropped" && downloaded > total * 0.4) fail("sync_offline", "GitHub could not be reached");
+        onProgress({ kind: "downloading", downloaded, total });
+        await delay(100);
+      }
+      onProgress({ kind: "downloading", downloaded: total, total });
+      if (updateDemo === "badsig") fail("update_signature", "Minisign error: the signature verification failed");
+      onProgress({ kind: "installing" });
+      // The real app closes here, and the installer starts the new version.
+      return new Promise<void>(() => {});
     },
 
     vault_status: async () => ({
@@ -282,6 +318,11 @@ export function createMockApi(): HatobaApi {
       if (!input.name.trim()) fail("invalid_input", "name is required", { field: "name" });
       if (!input.address.trim()) fail("invalid_input", "address is required", { field: "address" });
       if ([...input.ai_notes].length > 2_000) fail("invalid_input", "AI notes are limited to 2,000 characters", { field: "ai_notes" });
+      if (input.proxy_mode === "proxy" && !proxies.some((p) => p.id === input.proxy_id))
+        fail("invalid_input", "proxy not found", { field: "proxy_id" });
+      const env = input.env.map((v) => ({ name: v.name.trim(), value: v.value }));
+      if (env.length > ENV_MAX_VARS || validateEnvRows(envRows(env)).some(Boolean) || envTooLarge(envRows(env)) || env.some((v) => !v.name))
+        fail("invalid_input", "invalid environment variables", { field: "env" });
       const existing = input.id ? hosts.find((h) => h.id === input.id) : undefined;
       const view: HostView = {
         id: existing?.id ?? id("h"),
@@ -296,11 +337,15 @@ export function createMockApi(): HatobaApi {
         tags: input.tags,
         favorite: input.favorite,
         jump_host_id: input.jump_host_id,
+        proxy_mode: input.proxy_mode,
+        proxy_id: input.proxy_mode === "proxy" ? input.proxy_id : null,
         note: input.note,
         ai_notes: input.ai_notes,
+        env,
         updated_at: Date.now(),
         last_connected_at: existing?.last_connected_at ?? null,
         os: existing?.os ?? null,
+        show_stats: existing?.show_stats ?? false,
       };
       hosts = existing ? hosts.map((h) => (h.id === view.id ? view : h)) : [...hosts, view];
       touch();
@@ -313,7 +358,7 @@ export function createMockApi(): HatobaApi {
     host_duplicate: async (hid) => {
       const h = hosts.find((x) => x.id === hid);
       if (!h) fail("not_found");
-      const copy = { ...h, id: id("h"), name: `${h.name}-copy`, favorite: false, last_connected_at: null, os: null };
+      const copy = { ...h, id: id("h"), name: `${h.name}-copy`, favorite: false, last_connected_at: null, os: null, show_stats: false };
       hosts = [...hosts, copy];
       touch();
       return copy;
@@ -321,6 +366,10 @@ export function createMockApi(): HatobaApi {
     host_set_favorite: async (hid, favorite) => {
       hosts = hosts.map((h) => (h.id === hid ? { ...h, favorite } : h));
       touch();
+    },
+    host_set_show_stats: async (hid, on) => {
+      needUnlocked();
+      hosts = hosts.map((h) => (h.id === hid ? { ...h, show_stats: on } : h));
     },
     host_copy_password: async () => {},
     groups_list: async () => groups.map((g) => ({ ...g })),
@@ -348,15 +397,61 @@ export function createMockApi(): HatobaApi {
       });
     },
     ssh_config_preview: async () => [
-      { alias: "github-runner", address: "10.0.4.20", port: 22, username: "runner", identity_file: "~/.ssh/id_ed25519", proxy_jump: null, exists: false },
-      { alias: "bastion-tokyo", address: "bastion.tky.example.net", port: 2222, username: "ops", identity_file: null, proxy_jump: null, exists: true },
-      { alias: "minecraft", address: "mc.example.org", port: 22, username: "mc", identity_file: null, proxy_jump: "bastion-tokyo", exists: false },
+      { alias: "github-runner", address: "10.0.4.20", port: 22, username: "runner", identity_file: "~/.ssh/id_ed25519", proxy_jump: null, proxy_command: null, exists: false },
+      { alias: "bastion-tokyo", address: "bastion.tky.example.net", port: 2222, username: "ops", identity_file: null, proxy_jump: null, proxy_command: null, exists: true },
+      { alias: "minecraft", address: "mc.example.org", port: 22, username: "mc", identity_file: null, proxy_jump: "bastion-tokyo", proxy_command: null, exists: false },
+      { alias: "lab-gpu", address: "gpu.lab.internal", port: 22, username: "kc", identity_file: null, proxy_jump: null, proxy_command: "nc -X 5 -x 127.0.0.1:7890 %h %p", exists: false },
     ],
     ssh_config_import: async (aliases) => {
       await delay(300);
-      aliases.forEach((a) => hosts.push({ ...D.HOSTS[0], id: id("h"), name: a, favorite: false, tags: [], group_id: null, last_connected_at: null, os: null, key_id: null, auth_kind: "ask" }));
+      aliases.forEach((a) =>
+        hosts.push({ ...D.HOSTS[0], id: id("h"), name: a, favorite: false, tags: [], group_id: null, last_connected_at: null, os: null, key_id: null, auth_kind: "ask", proxy_mode: "device_default", proxy_id: null }),
+      );
       touch();
-      return { hosts_created: aliases.length, keys_imported: 0, warnings: [] };
+      const warnings = aliases.includes("lab-gpu") ? ["lab-gpu: ProxyCommand nc -X 5 -x 127.0.0.1:7890 %h %p was not imported; set a proxy or jump host for it"] : [];
+      return { hosts_created: aliases.length, keys_imported: 0, warnings };
+    },
+
+    proxies_list: async () => {
+      needUnlocked();
+      return proxyViews();
+    },
+    proxy_save: async (input) => {
+      needUnlocked();
+      if (!input.name.trim()) fail("invalid_input", "name is required", { field: "name" });
+      const address = input.address.trim().replace(/^\[(.*)\]$/, "$1");
+      if (!address) fail("invalid_input", "address is required", { field: "address" });
+      if (/\s/.test(address)) fail("invalid_input", "address is not a valid host name or IP", { field: "address" });
+      if (!input.port) fail("invalid_input", "port must be between 1 and 65535", { field: "port" });
+      const username = input.username.trim();
+      if (input.kind === "http" && username.includes(":"))
+        fail("invalid_input", "an HTTP proxy username can't contain a colon", { field: "username" });
+      const existing = input.id ? proxies.find((p) => p.id === input.id) : undefined;
+      if (input.id && !existing) fail("not_found");
+      const view: ProxyView = {
+        id: existing?.id ?? id("p"),
+        name: input.name.trim(),
+        kind: input.kind,
+        address,
+        port: input.port,
+        username,
+        has_password: !!username && (input.password !== null ? input.password.length > 0 : !!existing?.has_password),
+        host_ids: [],
+        updated_at: Date.now(),
+      };
+      proxies = existing ? proxies.map((p) => (p.id === view.id ? view : p)) : [...proxies, view];
+      touch();
+      return proxyViews().find((p) => p.id === view.id)!;
+    },
+    proxy_delete: async (pid) => {
+      if (!proxies.some((p) => p.id === pid)) fail("not_found");
+      proxies = proxies.filter((p) => p.id !== pid);
+      hosts = hosts.map((h) => (h.proxy_mode === "proxy" && h.proxy_id === pid ? { ...h, proxy_mode: "device_default", proxy_id: null } : h));
+      if (prefs.default_proxy_id === pid) {
+        prefs = { ...prefs, default_proxy_id: null };
+        localStorage.setItem("hatoba.mock.prefs", JSON.stringify(prefs));
+      }
+      touch();
     },
 
     keys_list: async () => {
@@ -464,6 +559,7 @@ export function createMockApi(): HatobaApi {
         state("disconnected", { exit_status: 0 });
         shells.delete(sid);
         dropSessionForwards(sid);
+        stopStats(sid);
       };
       // FWD-02: like the real backend, auto-start forwards come up with the connection and are announced
       // by events that can fire before the UI has the session id.
@@ -539,6 +635,7 @@ export function createMockApi(): HatobaApi {
         onFrame(frame(FRAME_CLOSED, new TextEncoder().encode("exit")));
         state("disconnected", { exit_status: 0 });
         shells.delete(sid);
+        stopStats(sid);
       };
       return sid;
     },
@@ -559,6 +656,26 @@ export function createMockApi(): HatobaApi {
       shells.get(sid)?.stop();
       shells.delete(sid);
       dropSessionForwards(sid);
+      stopStats(sid);
+    },
+    ssh_stats_start: async (sid, onEvent) => {
+      const shell = shells.get(sid) ?? fail("not_found", "session");
+      const statsId = ++lastStatsId;
+      await delay(300);
+      if (shell.os === "freebsd" || shell.os === "windows") {
+        onEvent({ kind: "unsupported", system: shell.os === "freebsd" ? "FreeBSD" : "Windows" });
+        return statsId;
+      }
+      // Like the backend: a start that a later one overtook does not run.
+      if ((statsTimers.get(sid)?.id ?? 0) > statsId) return statsId;
+      stopStats(sid);
+      const sample = mockStats();
+      onEvent({ kind: "stats", stats: sample(true) });
+      statsTimers.set(sid, { id: statsId, timer: setInterval(() => onEvent({ kind: "stats", stats: sample(false) }), 2000) });
+      return statsId;
+    },
+    ssh_stats_stop: async (sid, statsId) => {
+      if (statsTimers.get(sid)?.id === statsId) stopStats(sid);
     },
     ssh_test: async (input) => {
       await delay(800);

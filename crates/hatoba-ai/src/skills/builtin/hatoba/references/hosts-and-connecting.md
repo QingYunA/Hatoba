@@ -49,6 +49,7 @@ Typing `user@host`, `user@host:port` or an ssh command such as `ssh -p 2222 depl
 
 - Only `-p` (port) and `-l` (user) are understood. Other options (`-i`, `-J`, `-L` …) and remote commands show a row that explains why it cannot connect; save a host to use keys, jump hosts or forwards.
 - Without a user name (`ssh host`), Hatoba asks for one before connecting.
+- The connection goes through this device's default proxy, if Settings → Proxies has one.
 - Sign-in works like the `ssh` command: the SSH agent first, then the server's own prompts, or a password dialog (also when the server's prompts fail). The password is used once and never saved. Saved keys are not tried. A server that hangs up after rejecting too many agent keys is connected to again without the agent. The host key is checked as for any host (trust it on first use; it syncs).
 - The tab is titled `user@host`. Port forwarding is not offered, and **More actions** has **Save as Host…**, which opens the host editor filled in with the address, port and user. Once the host is saved, **Reconnect** connects the tab as that host.
 - Nothing is saved as a host by itself. Targets that connected are kept as **Recent** on this device only (at most 8, no passwords, never synced). With the search box empty and focused, they show under it (**Recent Quick Connections**); while typing, matching ones show as extra **Connect** rows. The × button removes one.
@@ -65,7 +66,7 @@ Typing `user@host`, `user@host:port` or an ssh command such as `ssh -p 2222 depl
 
 ## Import from ~/.ssh/config
 
-When the vault has no hosts yet, the empty host list offers **Import SSH Config**. It reads `~/.ssh/config` (on Windows `%USERPROFILE%\.ssh\config`), lists the `Host` entries, and imports the ones you tick. Entries whose name already exists are unticked and marked **Already exists**. A ProxyJump is kept when its first hop names a host that exists in Hatoba (otherwise the import warns); ProxyCommand is not supported. The button is not shown once the vault has hosts, so import before adding hosts, or add hosts by hand. Importing PuTTY sessions is not supported.
+When the vault has no hosts yet, the empty host list offers **Import SSH Config**. It reads `~/.ssh/config` (on Windows `%USERPROFILE%\.ssh\config`), lists the `Host` entries, and imports the ones you tick. Entries whose name already exists are unticked and marked **Already exists**. A ProxyJump is kept when its first hop names a host that exists in Hatoba (otherwise the import warns). ProxyCommand is not imported: the entry shows **ProxyCommand not imported**, the import warns, and the host connects without it until a proxy or jump host is set. SetEnv becomes the host's environment variables: the first SetEnv line that applies counts, as in OpenSSH, and a variable Hatoba can't use (see Environment variables below) is left out with a warning. SendEnv is not imported. The button is not shown once the vault has hosts, so import before adding hosts, or add hosts by hand. Importing PuTTY sessions is not supported.
 
 | en | zh-CN | ja |
 |---|---|---|
@@ -73,6 +74,7 @@ When the vault has no hosts yet, the empty host list offers **Import SSH Config*
 | Select All | 全选 | すべて選択 |
 | Select None | 全不选 | 選択解除 |
 | Already exists | 已存在 | 登録済み |
+| ProxyCommand not imported | 不导入 ProxyCommand | ProxyCommand は取り込みません |
 
 ## The host editor
 
@@ -89,7 +91,9 @@ When the vault has no hosts yet, the empty host list offers **Import SSH Config*
 | Organization & Network | 组织与网络 | 整理とネットワーク |
 | Group | 分组 | グループ |
 | Jump Host | 跳板机 | 踏み台 |
+| Proxy | 代理 | プロキシ |
 | Port Forwarding | 端口转发 | ポートフォワーディング |
+| Environment Variables | 环境变量 | 環境変数 |
 | Notes | 备注 | メモ |
 | AI Notes | AI 备注 | AI 向けメモ |
 | Test Connection | 测试连接 | 接続テスト |
@@ -101,6 +105,7 @@ When the vault has no hosts yet, the empty host list offers **Import SSH Config*
 - **Delete Host** is at the bottom of the editor for an existing host.
 - **Notes** are for you only. **AI Notes** go to the AI assistant in every request of a conversation on the host; see `references/ai-instructions.md`.
 - **Port Forwarding** in the editor lists the host's forwards; see `references/port-forwarding.md`. A new host must be saved before forwards can be added.
+- **Environment Variables** are sent to the server when a terminal opens; see Environment variables below.
 
 ## Authentication methods
 
@@ -127,7 +132,39 @@ When the vault has no hosts yet, the empty host list offers **Import SSH Config*
 
 ## Jump host
 
-**Jump Host** (ProxyJump) routes the connection through another saved host. Pick it from the list; the list excludes the host itself, and a loop of jump hosts is rejected. A jump host can have its own jump host. Each hop uses its own saved settings, and a jump host must use a saved password, a key with its passphrase saved, or **SSH Agent**. HTTP and SOCKS proxies are not supported. The status bar of the tab shows "via" and the jump host's name.
+**Jump Host** (ProxyJump) routes the connection through another saved host. Pick it from the list; the list excludes the host itself, and a loop of jump hosts is rejected. A jump host can have its own jump host. Each hop uses its own saved settings, and a jump host must use a saved password, a key with its passphrase saved, or **SSH Agent**. Behind a jump host, the jump host's own **Proxy** setting applies. The status bar of the tab shows "via" and the jump host's name.
+
+## Proxy
+
+**Proxy** sends the connection through a SOCKS5 or HTTP proxy. The proxy looks up the server's name, so a name that resolves only on the proxy's side works. The choices:
+
+- **Device default**: the proxy chosen in Settings → Proxies on this device, or no proxy when none is chosen there. The picker names the proxy it stands for. New and imported hosts start with it.
+- **No proxy**: always connect directly.
+- A saved proxy, by name.
+
+With a jump host, the jump host's own choice applies and the picker is disabled. Quick connections use this device's default. The reachability dots of the host list go through the same proxy as the connection. **Manage Proxies** opens Settings → Proxies, where proxies are added, edited and deleted (`references/settings.md`). Deleting a proxy switches the hosts that named it to **Device default**. When the proxy of a host, or this device's default, was deleted on another device, the picker shows **Deleted proxy** and connecting fails until another one is chosen.
+
+| en | zh-CN | ja |
+|---|---|---|
+| Proxy | 代理 | プロキシ |
+| Device default | 设备默认 | デバイスの既定 |
+| No proxy | 不使用代理 | プロキシなし |
+| Deleted proxy | 已删除的代理 | 削除されたプロキシ |
+| Manage Proxies | 管理代理 | プロキシを管理 |
+
+## Environment variables
+
+**Environment Variables** in the host editor lists `NAME=value` pairs, like `SetEnv` in OpenSSH. **Add Variable** adds a row and × removes one; they are saved with the host by **Save** and sync with it. When a terminal opens, Hatoba asks the server to set each one before the shell starts.
+
+| en | zh-CN | ja |
+|---|---|---|
+| Environment Variables | 环境变量 | 環境変数 |
+| Add Variable | 添加变量 | 変数を追加 |
+
+- The server sets only the names its sshd `AcceptEnv` setting lists and ignores the rest; the shell still starts, without them. Many servers (Debian and Ubuntu by default) accept only `LANG` and `LC_*`. To use other names, the server's administrator adds them to `AcceptEnv` in `/etc/ssh/sshd_config` and reloads sshd. Running `env` or `echo $NAME` in the terminal shows what arrived.
+- Hatoba sends `LANG=C.UTF-8` by default; a host's `LANG` replaces it. `TERM` sets the terminal type instead (`xterm-256color` by default) and needs no `AcceptEnv`.
+- Only the terminal's shell gets them. SFTP, the resource usage readout and the AI assistant's commands run without them.
+- A name uses letters, digits and `_`, doesn't start with a digit, is case-sensitive, and appears once per host. A value can't contain a line break or another control character. A host can have at most 64 variables, 16 KB of names and values together.
 
 ## Connecting, host keys and prompts
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use hatoba_core::model::{HostAuth, Item};
+use hatoba_core::model::{EnvVar, HostAuth, HostProxy, Item};
 use hatoba_core::platform::{SecretStore, secret_keys};
 use hatoba_core::sync::{
     ConflictEntry, D1Backend, Resolution, SyncBackend, SyncConfig, WorkerBackend, clear_session,
@@ -287,6 +287,7 @@ fn item_type(item: Option<&Item>) -> ItemType {
         Some(Item::KnownHost(_)) => ItemType::KnownHost,
         Some(Item::Forward(_)) => ItemType::Forward,
         Some(Item::Snippet(_)) => ItemType::Snippet,
+        Some(Item::Proxy(_)) => ItemType::Proxy,
         Some(Item::AiProvider(_)) => ItemType::AiProvider,
         Some(Item::SearchProvider(_)) => ItemType::SearchProvider,
         Some(Item::AiConversation(_)) => ItemType::AiConversation,
@@ -316,16 +317,26 @@ fn summary(item: &Item, hosts: &dyn Fn(&str) -> Option<String>) -> Vec<(&'static
                 }
                 .to_owned(),
             ),
+            // Names are prefixed, so one that reads like another value still reads as a name.
             (
                 "jump_host",
-                h.jump_host_id
-                    .as_deref()
-                    .and_then(hosts)
-                    .unwrap_or_default(),
+                h.jump_host_id.as_deref().map_or_else(String::new, |id| {
+                    hosts(id).map_or_else(|| "deleted".to_owned(), |name| format!("host:{name}"))
+                }),
+            ),
+            (
+                "proxy",
+                match &h.proxy {
+                    HostProxy::DeviceDefault => "device_default".to_owned(),
+                    HostProxy::Direct => "direct".to_owned(),
+                    HostProxy::Proxy { proxy_id } => hosts(proxy_id)
+                        .map_or_else(|| "deleted".to_owned(), |name| format!("proxy:{name}")),
+                },
             ),
             ("tags", h.tags.join(", ")),
             ("note", h.note.clone()),
             ("ai_notes", h.ai_notes.clone()),
+            ("env", env_summary(&h.env)),
         ],
         Item::Group(g) => vec![("name", g.name.clone())],
         Item::Key(k) => vec![
@@ -335,6 +346,14 @@ fn summary(item: &Item, hosts: &dyn Fn(&str) -> Option<String>) -> Vec<(&'static
         Item::KnownHost(k) => vec![("fingerprint", k.fingerprint.clone())],
         Item::Forward(f) => vec![("bind_port", f.bind_port.to_string())],
         Item::Snippet(s) => vec![("name", s.name.clone())],
+        // Never the password.
+        Item::Proxy(p) => vec![
+            ("name", p.name.clone()),
+            ("kind", p.kind.as_str().to_owned()),
+            ("address", p.address.clone()),
+            ("port", p.port.to_string()),
+            ("username", p.username.clone()),
+        ],
         // Never the API key, env or header values, or message data.
         Item::AiProvider(p) => vec![
             ("name", p.name.clone()),
@@ -357,6 +376,34 @@ fn summary(item: &Item, hosts: &dyn Fn(&str) -> Option<String>) -> Vec<(&'static
     }
 }
 
+/// What a row points at, for rows whose shown value can read the same for different choices:
+/// host and proxy names repeat, and every deleted one reads alike.
+fn targets(item: &Item) -> Vec<(&'static str, String)> {
+    match item {
+        Item::Host(h) => vec![
+            ("jump_host", h.jump_host_id.clone().unwrap_or_default()),
+            (
+                "proxy",
+                match &h.proxy {
+                    HostProxy::DeviceDefault => "device_default".to_owned(),
+                    HostProxy::Direct => "direct".to_owned(),
+                    HostProxy::Proxy { proxy_id } => format!("proxy:{proxy_id}"),
+                },
+            ),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// A host's environment variables on one line, each value quoted and escaped, so two different
+/// lists never read the same (SSH-14).
+fn env_summary(env: &[EnvVar]) -> String {
+    env.iter()
+        .map(|v| format!("{}={:?}", v.name, v.value))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> ConflictView {
     let local = c
         .local
@@ -368,6 +415,8 @@ fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> C
         .as_ref()
         .map(|i| summary(i, hosts))
         .unwrap_or_default();
+    let local_targets = c.local.as_ref().map(targets).unwrap_or_default();
+    let remote_targets = c.remote.as_ref().map(targets).unwrap_or_default();
     let mut fields: Vec<ConflictField> = Vec::new();
     if c.local_deleted != c.remote_deleted {
         let state = |deleted: bool| Some(if deleted { "deleted" } else { "modified" }.to_owned());
@@ -377,20 +426,20 @@ fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> C
             remote: state(c.remote_deleted),
         });
     }
+    let pick = |rows: &[(&str, String)], key: &str| {
+        rows.iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty())
+    };
     let keys: Vec<&str> = local.iter().chain(remote.iter()).map(|(k, _)| *k).collect();
     let mut seen = std::collections::HashSet::new();
     for key in keys.into_iter().filter(|k| seen.insert(*k)) {
-        let l = local
-            .iter()
-            .find(|(k, _)| *k == key)
-            .map(|(_, v)| v.clone())
-            .filter(|v| !v.is_empty());
-        let r = remote
-            .iter()
-            .find(|(k, _)| *k == key)
-            .map(|(_, v)| v.clone())
-            .filter(|v| !v.is_empty());
-        if l != r {
+        let l = pick(&local, key);
+        let r = pick(&remote, key);
+        let differs = pick(&local_targets, key).or_else(|| l.clone())
+            != pick(&remote_targets, key).or_else(|| r.clone());
+        if differs {
             fields.push(ConflictField {
                 field: key.to_owned(),
                 local: l,
@@ -432,8 +481,13 @@ fn conflict_view(c: &ConflictEntry, hosts: &dyn Fn(&str) -> Option<String>) -> C
 #[specta::specta]
 pub fn sync_conflicts(state: State<'_, AppState>) -> AppResult<Vec<ConflictView>> {
     state.with_unlocked(|v| {
-        let names: std::collections::HashMap<String, String> =
-            v.hosts().into_iter().map(|(id, h)| (id, h.name)).collect();
+        // Hosts name their jump host and proxy by id.
+        let names: std::collections::HashMap<String, String> = v
+            .hosts()
+            .into_iter()
+            .map(|(id, h)| (id, h.name))
+            .chain(v.proxies().into_iter().map(|(id, p)| (id, p.name)))
+            .collect();
         let lookup = |id: &str| names.get(id).cloned();
         Ok(v.conflicts(true)?
             .iter()
@@ -463,4 +517,136 @@ pub fn sync_conflict_resolve(
         sync::emit_status(&app);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use hatoba_core::model::Host;
+
+    use super::*;
+
+    fn host_with(env: Vec<EnvVar>) -> Option<Item> {
+        Some(Item::Host(Host {
+            name: "app".into(),
+            env,
+            ..Host::default()
+        }))
+    }
+
+    fn host_via(proxy: HostProxy) -> Option<Item> {
+        Some(Item::Host(Host {
+            name: "app".into(),
+            proxy,
+            ..Host::default()
+        }))
+    }
+
+    fn host_behind(jump: Option<&str>) -> Option<Item> {
+        Some(Item::Host(Host {
+            name: "app".into(),
+            jump_host_id: jump.map(str::to_owned),
+            ..Host::default()
+        }))
+    }
+
+    /// The local and remote values of one row, or `None` when the row is not shown.
+    fn row(
+        field: &str,
+        local: Option<Item>,
+        remote: Option<Item>,
+        names: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<(Option<String>, Option<String>)> {
+        conflict_view(&conflict(local, remote), names)
+            .fields
+            .into_iter()
+            .find(|f| f.field == field)
+            .map(|f| (f.local, f.remote))
+    }
+
+    fn shown(v: &str) -> Option<String> {
+        Some(v.to_owned())
+    }
+
+    fn conflict(local: Option<Item>, remote: Option<Item>) -> ConflictEntry {
+        ConflictEntry {
+            id: 1,
+            item_id: "h".into(),
+            resolution: Resolution::RemoteWins,
+            local,
+            remote,
+            local_deleted: false,
+            remote_deleted: false,
+            local_updated_at: Some(1),
+            remote_updated_at: Some(2),
+            created_at: 3,
+            reviewed: false,
+        }
+    }
+
+    #[test]
+    fn env_conflicts_show_even_when_the_values_look_alike() {
+        // SSH-14: one variable whose value holds ", B=" is not the same as two variables.
+        let entry = conflict(
+            host_with(vec![EnvVar::new("A", "x, B=y")]),
+            host_with(vec![EnvVar::new("A", "x"), EnvVar::new("B", "y")]),
+        );
+        let view = conflict_view(&entry, &|_| None);
+        let env = view
+            .fields
+            .iter()
+            .find(|f| f.field == "env")
+            .expect("the env row is shown");
+        assert_eq!(env.local.as_deref(), Some(r#"A="x, B=y""#));
+        assert_eq!(env.remote.as_deref(), Some(r#"A="x", B="y""#));
+    }
+
+    #[test]
+    fn proxy_conflicts_compare_the_chosen_proxy_not_its_name() {
+        // SSH-13: two proxies may share a name, and every deleted proxy reads alike.
+        let via = |id: &str| {
+            host_via(HostProxy::Proxy {
+                proxy_id: id.into(),
+            })
+        };
+        let clash = |id: &str| ["a", "b"].contains(&id).then(|| "Clash".to_owned());
+        let row = |local, remote| row("proxy", local, remote, &clash);
+
+        assert_eq!(
+            row(via("a"), via("b")),
+            Some((shown("proxy:Clash"), shown("proxy:Clash")))
+        );
+        assert_eq!(
+            row(via("gone"), via("also-gone")),
+            Some((shown("deleted"), shown("deleted")))
+        );
+        assert_eq!(
+            row(via("a"), host_via(HostProxy::DeviceDefault)),
+            Some((shown("proxy:Clash"), shown("device_default")))
+        );
+        assert_eq!(row(via("a"), via("a")), None);
+        assert_eq!(row(via("gone"), via("gone")), None);
+    }
+
+    #[test]
+    fn jump_host_conflicts_compare_the_chosen_host_not_its_name() {
+        // Two hosts may share a name, and every deleted jump host reads alike.
+        let bastion = |id: &str| ["a", "b"].contains(&id).then(|| "bastion".to_owned());
+        let row = |local, remote| row("jump_host", local, remote, &bastion);
+        let behind = |id| host_behind(Some(id));
+
+        assert_eq!(
+            row(behind("a"), behind("b")),
+            Some((shown("host:bastion"), shown("host:bastion")))
+        );
+        assert_eq!(
+            row(behind("gone"), behind("also-gone")),
+            Some((shown("deleted"), shown("deleted")))
+        );
+        assert_eq!(
+            row(behind("gone"), host_behind(None)),
+            Some((shown("deleted"), None))
+        );
+        assert_eq!(row(behind("a"), behind("a")), None);
+        assert_eq!(row(host_behind(None), host_behind(None)), None);
+    }
 }
