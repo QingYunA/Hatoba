@@ -5,11 +5,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use hatoba_core::model::{Host, HostAuth, Item, KnownHost};
+use hatoba_core::model::{Host, HostAuth, HostProxy, Item, KnownHost, ProxyKind as CoreProxyKind};
 use hatoba_core::vault::Vault;
 use hatoba_ssh::{
     AuthMethod, ConnectConfig, ForwardHandle, HostKeyInfo, HostKeyVerifier, JumpHop,
-    KeyboardInteractive, PromptRequest, SftpClient, ShellHandle, SshSession,
+    KeyboardInteractive, PromptRequest, ProxyConfig, ProxyKind, SftpClient, ShellHandle,
+    SshSession, StatsHandle,
 };
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -18,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 use crate::dto::{AuthPrompt, AuthPromptField, HostKeyPrompt, HostKeyPromptKind};
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, SshErrorKind};
 use crate::state::{AppState, now_ms, state};
 use crate::sync;
 
@@ -31,6 +32,8 @@ pub struct LiveSession {
     pub sftp: OnceCell<SftpClient>,
     /// Running local port forwards by forward item id (FWD-01).
     pub forwards: Mutex<HashMap<String, ForwardHandle>>,
+    /// Resource usage sampling while the terminal shows it (TERM-12), with the id of its start.
+    stats: Mutex<Option<(u64, StatsHandle)>>,
 }
 
 impl LiveSession {
@@ -40,6 +43,24 @@ impl LiveSession {
             shell,
             sftp: OnceCell::new(),
             forwards: Mutex::new(HashMap::new()),
+            stats: Mutex::new(None),
+        }
+    }
+
+    /// Keeps the sampling started as `id` in place of an earlier one, which stops. Starts can
+    /// finish out of order: one that a later start already replaced is dropped, and so stops.
+    pub fn set_stats(&self, id: u64, handle: StatsHandle) {
+        let mut stats = lock(&self.stats);
+        if stats.as_ref().is_none_or(|(current, _)| *current < id) {
+            *stats = Some((id, handle));
+        }
+    }
+
+    /// Stops the sampling started as `id`, unless a later one replaced it.
+    pub fn stop_stats(&self, id: u64) {
+        let mut stats = lock(&self.stats);
+        if stats.as_ref().is_some_and(|(current, _)| *current == id) {
+            *stats = None;
         }
     }
 
@@ -70,11 +91,12 @@ impl LiveSession {
             .collect()
     }
 
-    /// Stops forwards and closes the shell and connection.
+    /// Stops forwards and sampling, and closes the shell and connection.
     pub async fn close(&self) {
         for (_, handle) in lock(&self.forwards).drain() {
             handle.stop();
         }
+        lock(&self.stats).take();
         self.shell.close().await;
         self.session.disconnect().await;
     }
@@ -209,7 +231,51 @@ fn hop_target(host: &Host) -> (String, u16, String) {
     (host.address.clone(), host.port, host.username.clone())
 }
 
-/// Builds the connection config for `host`, resolving its ProxyJump chain (SSH-10).
+/// The proxy a connection whose first hop chose `choice` goes through (SSH-13). A proxy that was
+/// deleted fails the connection instead of connecting around it.
+pub fn resolve_proxy(vault: &Vault, choice: &HostProxy) -> AppResult<Option<ProxyConfig>> {
+    let (id, missing) = match choice {
+        HostProxy::Direct => return Ok(None),
+        HostProxy::Proxy { proxy_id } => (proxy_id.clone(), "the host's proxy was deleted"),
+        HostProxy::DeviceDefault => match crate::commands::proxies::device_default(vault) {
+            Some(id) => (id, "this device's default proxy was deleted"),
+            None => return Ok(None),
+        },
+    };
+    let proxy = vault
+        .get(&id)
+        .and_then(Item::as_proxy)
+        .ok_or_else(|| AppError::ssh(SshErrorKind::ProxyMissing, missing))?;
+    Ok(Some(ProxyConfig {
+        kind: match proxy.kind {
+            CoreProxyKind::Socks5 => ProxyKind::Socks5,
+            CoreProxyKind::Http => ProxyKind::Http,
+        },
+        host: proxy.address.clone(),
+        port: proxy.port,
+        username: proxy.username.clone(),
+        password: proxy.password.clone(),
+    }))
+}
+
+/// The proxy of a connection to `host`: the choice of its first hop, which is its outermost
+/// jump host, or the host itself without one. A broken jump chain ends where it breaks.
+pub fn connection_proxy(vault: &Vault, host: &Host) -> AppResult<Option<ProxyConfig>> {
+    let mut first = host;
+    let mut seen = HashSet::new();
+    while let Some(jump) = first
+        .jump_host_id
+        .as_deref()
+        .filter(|id| seen.insert(id.to_owned()) && seen.len() <= 8)
+        .and_then(|id| vault.get(id).and_then(Item::as_host))
+    {
+        first = jump;
+    }
+    resolve_proxy(vault, &first.proxy)
+}
+
+/// Builds the connection config for `host`, resolving its ProxyJump chain (SSH-10) and the
+/// proxy of the first hop (SSH-13).
 pub fn build_config(
     vault: &Vault,
     host: &Host,
@@ -219,6 +285,8 @@ pub fn build_config(
     let mut chain: Vec<JumpHop> = Vec::new();
     let mut seen: HashSet<String> = self_id.into_iter().map(str::to_owned).collect();
     let mut next = host.jump_host_id.clone();
+    // The first hop is the last jump host reached, or the host itself.
+    let mut first_proxy = &host.proxy;
     while let Some(jump_id) = next {
         if !seen.insert(jump_id.clone()) || chain.len() >= 8 {
             return Err(AppError::invalid(
@@ -230,6 +298,7 @@ pub fn build_config(
             .get(&jump_id)
             .and_then(Item::as_host)
             .ok_or_else(|| AppError::invalid("jump_host_id", "jump host not found"))?;
+        first_proxy = &jump.proxy;
         let (h, p, u) = hop_target(jump);
         chain.push(JumpHop {
             host: h,
@@ -243,6 +312,7 @@ pub fn build_config(
     let (h, p, u) = hop_target(host);
     let mut cfg = ConnectConfig::new(h, p, u, auth_method(vault, host, overrides, false)?);
     cfg.jump = chain;
+    cfg.proxy = resolve_proxy(vault, first_proxy)?;
     Ok(cfg)
 }
 

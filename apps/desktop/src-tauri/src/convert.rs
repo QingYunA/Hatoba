@@ -1,9 +1,16 @@
 //! Model → DTO conversions. This is the boundary where secret fields are dropped (spec §10.1).
 
-use hatoba_core::model::{Group, Host, HostAuth, KeyAlgorithm as CoreAlg, SshKey};
+use hatoba_core::model::{
+    Group, Host, HostAuth, HostProxy, KeyAlgorithm as CoreAlg, Proxy, ProxyKind as CoreProxyKind,
+    SshKey,
+};
 use hatoba_core::vault::Vault;
+use hatoba_ssh::ServerStats;
 
-use crate::dto::{AuthKind, GroupView, HostView, KeyAlgorithm, KeyView};
+use crate::dto::{
+    AuthKind, GroupView, HostEnvVar, HostView, KeyAlgorithm, KeyView, ProxyKind, ProxyMode,
+    ProxyView, ServerStatsView,
+};
 
 pub fn host_view(id: &str, host: &Host, vault: &Vault) -> HostView {
     let (auth_kind, has_password, key_id) = match &host.auth {
@@ -11,6 +18,11 @@ pub fn host_view(id: &str, host: &Host, vault: &Vault) -> HostView {
         HostAuth::Key { key_id } => (AuthKind::Key, false, Some(key_id.clone())),
         HostAuth::Agent => (AuthKind::Agent, false, None),
         HostAuth::Ask => (AuthKind::Ask, false, None),
+    };
+    let (proxy_mode, proxy_id) = match &host.proxy {
+        HostProxy::DeviceDefault => (ProxyMode::DeviceDefault, None),
+        HostProxy::Direct => (ProxyMode::Direct, None),
+        HostProxy::Proxy { proxy_id } => (ProxyMode::Proxy, Some(proxy_id.clone())),
     };
     HostView {
         id: id.to_owned(),
@@ -25,11 +37,63 @@ pub fn host_view(id: &str, host: &Host, vault: &Vault) -> HostView {
         tags: host.tags.clone(),
         favorite: host.favorite,
         jump_host_id: host.jump_host_id.clone(),
+        proxy_mode,
+        proxy_id,
         note: host.note.clone(),
         ai_notes: host.ai_notes.clone(),
         updated_at: host.updated_at,
         last_connected_at: vault.last_connected(id),
         os: vault.host_os(id),
+        show_stats: vault.host_show_stats(id),
+        env: host
+            .env
+            .iter()
+            .map(|v| HostEnvVar {
+                name: v.name.clone(),
+                value: v.value.clone(),
+            })
+            .collect(),
+    }
+}
+
+pub fn proxy_view(id: &str, proxy: &Proxy, vault: &Vault) -> ProxyView {
+    ProxyView {
+        id: id.to_owned(),
+        name: proxy.name.clone(),
+        kind: match proxy.kind {
+            CoreProxyKind::Socks5 => ProxyKind::Socks5,
+            CoreProxyKind::Http => ProxyKind::Http,
+        },
+        address: proxy.address.clone(),
+        port: proxy.port,
+        username: proxy.username.clone(),
+        has_password: !proxy.password.is_empty(),
+        host_ids: vault
+            .hosts()
+            .into_iter()
+            .filter(|(_, h)| h.proxy.proxy_id() == Some(id))
+            .map(|(host_id, _)| host_id)
+            .collect(),
+        updated_at: proxy.updated_at,
+    }
+}
+
+pub fn stats_view(stats: ServerStats) -> ServerStatsView {
+    ServerStatsView {
+        cpu_percent: stats.cpu_percent,
+        cpus: stats.cpus,
+        load: stats.load,
+        mem_total: stats.mem_total,
+        mem_used: stats.mem_used,
+        swap_total: stats.swap_total,
+        swap_used: stats.swap_used,
+        net_rx_rate: stats.net_rx_rate,
+        net_tx_rate: stats.net_tx_rate,
+        net_interfaces: stats.net_interfaces,
+        disk_total: stats.disk_total,
+        disk_used: stats.disk_used,
+        disk_available: stats.disk_available,
+        uptime_secs: stats.uptime_secs,
     }
 }
 

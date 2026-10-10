@@ -18,7 +18,7 @@ mod sync;
 mod update;
 
 use commands::{
-    ai as ai_cmd, app, deploy as deploy_cmd, forwards, hosts, keys, mcp as mcp_cmd, quick,
+    ai as ai_cmd, app, deploy as deploy_cmd, forwards, hosts, keys, mcp as mcp_cmd, proxies, quick,
     settings, sftp, skills, ssh as ssh_cmd, sync as sync_cmd, vault,
 };
 use tauri::Manager;
@@ -56,6 +56,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             hosts::host_delete,
             hosts::host_duplicate,
             hosts::host_set_favorite,
+            hosts::host_set_show_stats,
             hosts::host_copy_password,
             hosts::groups_list,
             hosts::group_save,
@@ -64,6 +65,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             hosts::hosts_probe,
             hosts::ssh_config_preview,
             hosts::ssh_config_import,
+            proxies::proxies_list,
+            proxies::proxy_save,
+            proxies::proxy_delete,
             keys::keys_list,
             keys::key_import,
             keys::key_generate,
@@ -78,6 +82,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ssh_cmd::ssh_write,
             ssh_cmd::ssh_resize,
             ssh_cmd::ssh_disconnect,
+            ssh_cmd::ssh_stats_start,
+            ssh_cmd::ssh_stats_stop,
             ssh_cmd::ssh_test,
             ssh_cmd::hostkey_respond,
             ssh_cmd::auth_prompt_respond,

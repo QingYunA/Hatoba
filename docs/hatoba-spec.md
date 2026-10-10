@@ -207,7 +207,7 @@ All item IDs are UUIDv7. Reading plaintext tolerates unknown and missing fields,
 
 ```ts
 type Item =
-  | Host | Group | SshKey | KnownHost | PortForward | Snippet
+  | Host | Group | SshKey | KnownHost | PortForward | Snippet | Proxy
   | AiProvider | SearchProvider | AiConversation | AiMessage
   | Skill | SkillFile | McpServer
   | Settings;
@@ -227,9 +227,13 @@ interface Host {
   tags: string[];               // Such as ["production", "tokyo"]
   favorite: boolean;
   jump_host_id: string | null;  // P1, ProxyJump
+  proxy?:                       // SSH-13; absent for the device's default proxy
+    | { kind: "direct" }
+    | { kind: "proxy"; proxy_id: string };
   note: string;
   ai_notes?: string;            // AI-37, at most 2,000 characters; absent while empty
   updated_at: number;           // Milliseconds since the epoch, used for conflict resolution
+  env?: { name: string; value: string }[];  // SSH-14; absent while empty
 }
 
 interface Group {
@@ -281,6 +285,17 @@ interface Snippet {              // P2
   name: string;
   command: string;
   tags: string[];
+  updated_at: number;
+}
+
+interface Proxy {                // SSH-13
+  type: "proxy";
+  name: string;
+  kind: "socks5" | "http";      // http: a proxy that supports CONNECT
+  address: string;              // Domain name or IP of the proxy
+  port: number;                 // 1080 by default
+  username: string;             // Empty when the proxy needs no sign-in
+  password: string;             // Used only with a username
   updated_at: number;
 }
 
@@ -402,7 +417,7 @@ The database holds device-local data (the device ID, the sync cursor, the local 
 
 - `meta`: key-value pairs for the KDF parameters, the wrapped vault key, the device ID, the sync cursor, and so on. The recent quick-connect targets (HOST-12) are sealed under the vault key here, because they name hosts.
 - `items`: one row per item. `envelope` holds only the §4.2 envelope and becomes NULL after deletion (a tombstone). `revision` is the version the server has confirmed, 0 for items that were never synced. `dirty` marks local changes that have not been pushed yet.
-- `local_state`: device-local data that is not synced, such as the last connection time and the server's OS (HOST-11).
+- `local_state`: device-local data that is not synced, such as the last connection time, the server's OS (HOST-11), and whether the host's terminals show resource usage (TERM-12).
 - `conflict_log`: conflicts resolved automatically under §6.4, kept for item-by-item review and restore.
 
 The sync session token and the Cloudflare API token of D1 direct mode live in the system credential store (Windows Credential Manager). They are never written to SQLite and never synced. The API token for in-app deployment and the setup token the app generates are not stored anywhere (§6.7). For a Worker the app deployed, the sync backend setting in `meta` also records the account ID and the Worker name, which are not secrets and only fill in the upgrade form.
@@ -604,6 +619,8 @@ Structural errors (missing fields, wrong types, invalid IDs, `deleted` inconsist
 
 A failed sync does not affect local use. The UI shows **Offline** or **Signed out**, and the next trigger retries automatically with exponential backoff.
 
+**When a connection ends**: every backend the client installs (after unlock, sign-in, setup, or restore) starts a new connection. Locking the vault, **Disconnect**, and installing another backend end the current one. Its rounds are cancelled: a cancelled round drops the request in flight, sends no further request, and no longer changes the local vault or the sync status. The backend it used forgets its credentials in memory, so it cannot authenticate again. **Disconnect** waits until the running round has stopped, and only then deletes the session, the API token, and the sync configuration, so no round writes `sync_cursor`, revisions, or the last sync time after it, or into a connection set up later. A request already sent may still be applied by the server. The client then handles it like a lost response: the next round on that remote adopts the result without a conflict.
+
 ### 6.4 Conflict resolution
 
 1. Default rule: decrypt both versions and keep the one with the newer `updated_at` in the plaintext (last writer wins).
@@ -792,8 +809,10 @@ Without a token, nothing changes on the Worker. While it is at or above the mini
 | SSH-08 | keyboard-interactive authentication (including 2FA and OTP) | P1 |
 | SSH-09 | ssh-agent: the OpenSSH agent named pipe `\\.\pipe\openssh-ssh-agent` on Windows and `SSH_AUTH_SOCK` on macOS and Linux. Pageant compatibility is P2 | P1 |
 | SSH-10 | Multi-hop ProxyJump: open a direct-tcpip channel over the previous hop's connection and start the next hop's session over that channel | P1 |
-| SSH-11 | Import `%USERPROFILE%\.ssh\config` (`~/.ssh/config` on macOS and Linux) with Host, HostName, User, Port, IdentityFile, and ProxyJump | P1 |
+| SSH-11 | Import `%USERPROFILE%\.ssh\config` (`~/.ssh/config` on macOS and Linux) with Host, HostName, User, Port, IdentityFile, ProxyJump, and SetEnv. A `ProxyCommand` is not imported; the preview marks the entry and the import warns. The preview shows each host's IdentityFile. Private keys are imported only when the user ticks a separate option that lists the files it reads, and only from those files: a host whose identity file was not listed, for example because the config changed after the preview, uses **Ask Each Time** with a warning. Without the option, the hosts use **Ask Each Time** and no key file is read. Key files are read with the same limits as KEY-01 and outside the vault lock, and a key already in the vault (by fingerprint) is reused | P1 |
 | SSH-12 | Import saved PuTTY sessions (from the registry key `HKCU\Software\SimonTatham\PuTTY\Sessions`) | P2 |
+| SSH-13 | SOCKS5 (RFC 1928, with RFC 1929 username and password) and HTTP CONNECT (with Basic authentication) proxies for the TCP connection of the first hop: the host, or its outermost jump host, whose own choice applies. The server's name goes to the proxy unresolved. Proxies are `proxy` items (§5.1) that sync. A host uses the device default, no proxy, or a saved proxy; the device default is chosen per device in **Settings → Proxies** and kept in the device-local preferences, because a proxy such as one on `127.0.0.1` exists only on some devices. Quick connect (HOST-12) uses the device default. A proxy that was deleted fails the connection instead of connecting around it, and deleting a proxy moves the hosts that named it to the device default. Proxy failures have their own error kinds: the proxy cannot be reached, it rejects the sign-in, it does not open the connection, or it was deleted. Through a proxy the latency is the round trip of an SSH keepalive to the first hop | P1 |
+| SSH-14 | Per-host environment variables, like OpenSSH's `SetEnv`: the host editor lists `NAME=value` pairs, stored on the host as `env` so they sync with it. When a terminal opens, each one is sent as an `env` request before the shell starts, after the default `LANG=C.UTF-8`; a host variable with the same name replaces the default, and `TERM` sets the terminal type of the PTY request instead. The server sets only the names its `AcceptEnv` allows, and a refused variable is ignored. Only the terminal's shell gets them, not the commands Hatoba runs itself (TERM-12, the AI's `run_command`) or SFTP. A name is ASCII letters, digits, and `_`, not starting with a digit, and appears once per host; a value has no control character other than tab. A host has at most 64 variables, names of at most 128 characters, values of at most 4,096, and at most 16 KiB of names and values together. Saving refuses a host whose item would be larger than sync accepts (§6.2). SSH config import (SSH-11) takes the first `SetEnv` line that applies and reads its quotes and backslash escapes as OpenSSH does, and leaves out variables that break these rules with a warning | P1 |
 
 ### 7.2 Terminal
 
@@ -810,6 +829,7 @@ Without a token, nothing changes on the Worker. While it is at or above the mini
 | TERM-09 | Split panes | P2 |
 | TERM-10 | Save session logs to local files | P2 |
 | TERM-11 | Snippets (saved commands) | P2 |
+| TERM-12 | The resource usage of a Linux server in the status bar: CPU, memory, and network rates, which open a popover with CPU and network over the last 3 minutes, memory and swap, the root filesystem, the load averages, and uptime. Pointing at a chart shows every value as it was at that reading. Off until turned on; the choice is remembered per host as device-local data like HOST-06, and a quick connection (HOST-12) keeps it for the tab. The readings come from `/proc` over the session's own connection: `SshSession::open_stats` in `crates/hatoba-ssh/src/stats.rs` runs `sh -s` on an exec channel and sends it the script `stats.sh` on stdin, which prints a block every 2 seconds, so nothing is installed on the server and the login shell only has to start `sh`. The script runs as a process on the server while the readout is sampled, which is only while the tab is in front, the window is shown, and the vault is unlocked. A server whose identification string names another system (HOST-11) is not asked; any other server that is not Linux or has no `sh` shows that resource usage needs Linux | P2 |
 
 ### 7.3 SFTP
 
@@ -861,7 +881,7 @@ Without a token, nothing changes on the Worker. While it is at or above the mini
 | HOST-07 | Connect with a double-click or Enter | P0 |
 | HOST-08 | On the host edit page, a saved password shows only **Saved** and can be replaced but not viewed | P0 |
 | HOST-09 | Duplicate a host | P1 |
-| HOST-10 | Online status dots: probe the TCP port of the hosts visible in the list (TCP connect only, no authentication), with a 3-second timeout, once every 60 seconds. A setting turns it off | P1 |
+| HOST-10 | Online status dots: probe the TCP port of the hosts visible in the list (TCP connect only, no authentication), with a 3-second timeout, once every 60 seconds. A setting turns it off. The probe goes through the proxy the connection would use (SSH-13) and then waits for the first byte of the server's identification string, because some proxies confirm a connection before they reach the server | P1 |
 | HOST-12 | Quick connect from the search box. Input that contains `@` or starts with `ssh ` is also read as a target: `user@host[:port]`, `ssh://user@host[:port]`, or `ssh [-p port] [-l user] [user@]host`, with an IPv6 address in brackets. A **Connect** row for it heads the list and is selected, so Enter connects it; other ssh options and remote commands show the row disabled with the reason. A saved host with the same address, port, and user is selected instead, so its key and jump host are used. Without a user name, the app asks for one. Authentication works like the `ssh` command: ssh-agent first (SSH-09), then the server's keyboard-interactive prompts (SSH-08), or else (also when those fail) a password asked as in SSH-03 and never stored; saved keys are not tried. A server that hangs up after rejecting too many agent keys is connected to again without the agent. The host key, timeouts, and reconnecting work as in SSH-04, SSH-05, and SSH-07. Nothing is saved as a host unless the user picks **Save as Host…** in the tab's menu, which opens the host editor filled in with the address, port, and user; after that, **Reconnect** connects the tab as the saved host. Features that belong to a saved host, such as port forwarding, are not offered on these tabs. The AI assistant names the target where it would name the host, and the next message moves a conversation off its saved host as in AI-09. Targets that connected are kept as device-local recent targets (at most 8, only `user@host:port`, never synced), each removable. They show under the search box while it is focused and empty, and as extra **Connect** rows when they match the query | P1 |
 
 ### 8.3 Keys
@@ -888,12 +908,12 @@ The design defines the visuals. This section only specifies the behavior and sta
 | First launch | Choose between **Create a New Vault** and **Restore from Cloud** | None |
 | Host list | The sidebar has All, Favorites, groups, and tags. List rows show the name, `user@host:port`, tags, online status, and last connection time. A search box and a new-host button sit at the top. The search box also takes an SSH target to connect to without saving it (HOST-12) | Empty (suggesting a new host or an ssh config import), no search results, a typed target (a **Connect** row in place of no results), an ssh command quick connect cannot run (the row disabled with the reason), recent targets under the focused, empty search box |
 | Host edit | Fields as in §5.1, password field rules as in HOST-08 | Field validation errors |
-| Terminal | Tab bar at the top, connection status, and an expandable SFTP panel | Connecting, connection failed (with a retry button), fingerprint confirmation dialog, fingerprint mismatch warning, disconnected |
+| Terminal | Tab bar at the top, connection status, resource usage (TERM-12), and an expandable SFTP panel | Connecting, connection failed (with a retry button), fingerprint confirmation dialog, fingerprint mismatch warning, disconnected. Resource usage: reading, a server that is not Linux, sampling stopped (with the reason and **Retry**) |
 | Keys | See §8.3 | Empty |
 | Cloud Sync | A three-step wizard: choose a method → enter connection details → set or enter the master password. The methods are deploying the Worker from the app (recommended, §6.7), connecting a Worker deployed with the Deploy to Cloudflare button or wrangler (Worker URL and setup token), and D1 direct mode (Account ID and API token plus a database). A status page follows | Synced, syncing, conflicts, offline, signed out, Worker update available, Worker update required. Device list and revocation |
 | Cloud Sync: in-app deployment | The connection step of the in-app method: the API token field with the **Create token** link, the Account ID (filled in when possible, or a list when the token reaches several accounts), and the Worker and database names in an expandable section. After the token check, the page lists what it will create or reuse and the Worker URL, and **Deploy** runs the steps of §6.7 with a progress row for each. On success it shows the Worker URL and continues to the master password step. **Update Worker** on the status page opens the same form with the known values filled in | Token rejected or missing a permission (naming the permission, with a link to edit the token), no workers.dev subdomain (choose one), name taken (per §6.7), each step pending, running, done, skipped, or failed, a failed step (the error, **Retry**, **Remove what Hatoba created**), waiting for workers.dev (**Check again**), offline, a build without the Worker bundle |
 | AI panel | A resizable panel at the right edge of the window, toggled with the shortcut in §9.1. The header has the conversation title, the tab's host, the permission mode switch, history, and **New conversation**. Messages render as Markdown with no raw HTML and no remote images, and links open in the system browser. Each tool call is a collapsible block with its input, output, and exit status, and approval cards appear in place. The input area has a multi-line box (Enter sends, Shift+Enter adds a line), the model selector, a tools menu that switches MCP servers off for the conversation (AI-30), the context meter, and **Stop** during a turn. §13 defines the behavior | No provider configured (with a link to **Settings → AI**), no terminal tab (AI-09), streaming, waiting for approval, tool running, tool call limit reached, tab disconnected, response cut off at the output limit, response declined by the model, provider error (the HTTP status and the provider's message, with **Retry**), context nearly full, empty history |
-| Settings | Terminal appearance, auto-lock timeout, whether locking disconnects sessions, and language. **AI**: providers and their models, search provider, default model, default permission mode, the tool call limit, skills, and MCP servers (§13). **About**: the app version and the update check from §11, with a switch for the automatic check, and **Report a Problem**, which opens the GitHub bug report form with the app version and the operating system filled in. When a check finds a newer release, the settings button in the sidebar shows a dot and opens the About page | AI provider test passed or failed (AI-04), model list failed to load, skill import rejected (naming the file or field), MCP server starting, running, or failed (with its stderr). Update check: checking, up to date (also when nothing has been released yet), update available (with a link to the release page), offline, failed |
+| Settings | Terminal appearance, auto-lock timeout, whether locking disconnects sessions, and language. **Proxies**: the saved proxies and the default proxy of this device (SSH-13). **AI**: providers and their models, search provider, default model, default permission mode, the tool call limit, skills, and MCP servers (§13). **About**: the app version and the update check from §11, with a switch for the automatic check, and **Report a Problem**, which opens the GitHub bug report form with the app version and the operating system filled in. When a check finds a newer release, the settings button in the sidebar shows a dot and opens the About page | AI provider test passed or failed (AI-04), model list failed to load, skill import rejected (naming the file or field), MCP server starting, running, or failed (with its stderr). Update check: checking, up to date (also when nothing has been released yet), update available (with a link to the release page), offline, failed |
 | Star prompt | A card at the bottom of the sidebar asks for a star on GitHub, with **Star**, which opens the repository, and **Report a Problem** as in Settings → About. It waits a day from the first unlock on this device. After that it shows on the home tab once a session has connected since launch, and stays hidden while the settings button shows the update dot. Either button or closing the card ends the prompt for good | None |
 
 **Global requirements**:
@@ -972,7 +992,7 @@ tauri-specta generates the full list of events into the `events` object in `apps
 The [development guide](development.md#testing) has the commands that run each test suite.
 
 - **Unit tests**: the crypto module uses fixed test vectors. The tests cover envelope encryption round trips, require decryption to fail when the AAD or the ciphertext is tampered with, and cover each conflict resolution rule.
-- **SSH integration tests**: the tests start a throwaway local OpenSSH `sshd` and cover passwords, each key type, passphrase-protected keys, PPK, host key verification and key changes, keyboard-interactive, multi-hop ProxyJump, ssh-agent, SFTP, port forwarding, 50 MB output throughput and backpressure, and error classification. `hatoba-ssh` is platform independent, so these tests run on the Linux runner in CI.
+- **SSH integration tests**: the tests start a throwaway local OpenSSH `sshd` and cover passwords, each key type, passphrase-protected keys, PPK, host key verification and key changes, keyboard-interactive, multi-hop ProxyJump, ssh-agent, SFTP, port forwarding, environment variables, 50 MB output throughput and backpressure, and error classification. `hatoba-ssh` is platform independent, so these tests run on the Linux runner in CI.
 - **Windows tests**: CI builds and runs the unit tests on `windows-latest`. Before a release, installation, the title bar, input methods, high DPI, and Windows Hello are checked by hand on real Windows 10 and Windows 11 machines.
 - **Linux tests**: CI runs the unit and integration tests on `ubuntu-latest` and builds the deb package and the AppImage on Ubuntu 22.04. Before a release, the deb package is installed on Ubuntu and the AppImage is run on another distribution, checking the title bar, window resizing, input methods, the clipboard, and that sync stores its credentials in the Secret Service.
 - **Worker tests**: Vitest with `@cloudflare/vitest-plugin` tests every API on local workerd and a local D1, including the setup token, sessions and expiry, concurrent conflicts, pagination, size limits, session revocation on password change, the recovery flow, device management, and rate limiting.
@@ -1019,7 +1039,7 @@ Chat Completions covers OpenAI, Gemini through Google's OpenAI-compatible endpoi
 | ID | Requirement | Priority |
 |---|---|---|
 | AI-01 | Providers in **Settings → AI**: add, edit, and delete providers, each with a name, a protocol, a base URL, an API key, and models. The form preselects `anthropic` for `api.anthropic.com` and for base URLs whose path ends in `/anthropic`. The key behaves like a host password (HOST-08): once saved it shows only **Saved** and can be replaced but not viewed. It can be empty for local servers that need none | P1 |
-| AI-02 | Requests stream and carry `tools`, so a model must support tool calls. Anthropic requests send `max_tokens` from the model's output limit, at most 128,000, or 16,000 when it is unknown, and set top-level `cache_control` so the provider caches the conversation prefix. The base URL must use HTTPS unless it points at a loopback or private network address, as self-hosted servers such as Ollama and LM Studio usually do. The same rule holds for a SearXNG URL (AI-14) and an MCP server's `http` URL (AI-29). An `http` URL with a host name is checked again when connecting: the request goes through a client that resolves the name itself, refuses it unless every address is local, connects only to the addresses it checked, and does not use the system proxy, so a name that comes to resolve to a public address never receives the key or the headers in clear text | P1 |
+| AI-02 | Requests stream and carry `tools`, so a model must support tool calls. Anthropic requests send `max_tokens` from the model's output limit, at most 128,000, or 16,000 when it is unknown (Compact asks for less, AI-21), and set top-level `cache_control` so the provider caches the conversation prefix. The base URL must use HTTPS unless it points at a loopback or private network address, as self-hosted servers such as Ollama and LM Studio usually do. The same rule holds for a SearXNG URL (AI-14) and an MCP server's `http` URL (AI-29). An `http` URL with a host name is checked again when connecting: the request goes through a client that resolves the name itself, refuses it unless every address is local, connects only to the addresses it checked, and does not use the system proxy, so a name that comes to resolve to a public address never receives the key or the headers in clear text | P1 |
 | AI-03 | Models: type the model IDs, or fetch the provider's model list (`GET {base_url}/models`, or `GET {base_url}/v1/models` for `anthropic`) and pick from it. Each model has a display name, and an optional context window and output limit in tokens, which are filled in when the list includes them (Anthropic's list has `max_input_tokens` and `max_tokens`) and can be edited. Each model also has the thinking levels it accepts (AI-05), which Anthropic's list gives in `capabilities.effort`, along with whether the model supports adaptive thinking (`capabilities.thinking`). The levels can be set for each model, none included; a model whose levels are unknown offers Low, Medium, and High. Fetching the list again fills in the levels of models already in the form that have none yet | P1 |
 | AI-04 | **Test Connection** sends a minimal request to the first model, or fetches the model list when no model is entered yet, and tells authentication failures, network failures, and unknown models apart | P1 |
 | AI-05 | The model selector in the panel's input area lists the models of every provider, grouped by provider. A new conversation uses the default model from **Settings → AI**, and a conversation keeps the model it used last. Switching models keeps the whole conversation, and the first message to another model ID than the newest reply came from starts with a `model_change` note (§13.3, "Attachment blocks"), which the panel shows as a divider. A switch noted on a message that got no reply is not noted again. Under the current model the selector offers the thinking levels it accepts: **Default**, which leaves the depth to the provider, then Low, Medium, High, Extra High, and Max. A new conversation starts at the default level from **Settings → AI** (Default unless changed), and a conversation keeps the level of its last message, stored on its `ai_conversation` item; one without a stored level is at Default. A level the model does not offer is sent as the highest lower level it does, or as Default when there is none, and the selector shows the level that is sent. What each protocol sends is described below the table | P1 |
@@ -1094,8 +1114,8 @@ In manual approval mode, `read_terminal` and `web_search` run without asking, an
 | ID | Requirement | Priority |
 |---|---|---|
 | AI-20 | The context meter in the input area shows the tokens the conversation uses against the model's context window, as a ring and a percentage with the numbers on hover, or only the token count when the context window is unknown. The count is the last response's input and output tokens plus an estimate from text length for what was added since. For Chat Completions these are `prompt_tokens` and `completion_tokens` (requests set `stream_options.include_usage`). For Anthropic, input is the sum of `input_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`, because `input_tokens` leaves out the cached part, and output is `output_tokens`. When a Chat Completions server rejects `stream_options`, the request is retried once without it, and the count becomes an estimate marked `≈`. Each assistant entry stores its usage, so a reopened conversation shows the meter without a request. After a model switch, the count is an estimate until the next response | P1 |
-| AI-21 | **Compact** asks the current model to summarize the context, stores the summary as an entry, and moves `context_start` to it. Earlier entries stay in the panel, marked as outside the context. At 80% the meter takes the warning color and offers **Compact** | P1 |
-| AI-22 | Compact automatically before a request that would pass 90% of the context window | P2 |
+| AI-21 | **Compact** asks the current model to summarize the context, stores the summary as an entry, and moves `context_start` to it. Earlier entries stay in the panel, marked as outside the context. At 80% the meter takes the warning color and offers **Compact**. The Compact request is the request the conversation's next turn would send, with the same system prompt, tools (MCP tools included) and entries, and the instruction appended as a last user message, so the provider's prompt cache serves everything before it; only `max_tokens` is lower: at most 16,000, the model's output limit, and 9% of the context window. The instruction asks for text only and keeps what the assistant can use (tools, skills, the terminal connection) out of the summary, since every request states that itself. An answer that calls tools or has no text is dropped, none of its calls runs, and the request is sent once more without tools, with the system prompt saying the request only asks for a summary; when that answer calls tools or has no text either, the compaction fails and nothing is stored. Hatoba logs each Compact answer's token counts, cache reads and writes included, never its text | P1 |
+| AI-22 | Compact automatically before a request that would pass 90% of the context window. Between tool calls, the instruction also asks for the task in progress, what the latest tool results showed, and the next step, and the turn goes on from the summary | P2 |
 
 ### 13.7 History and sync
 
@@ -1121,7 +1141,8 @@ type AiEntry = { created_at: number } & (
       reasoning: string | null;   // AI-06, for display
       tool_calls: { id: string; name: string; arguments: string }[];  // arguments as a JSON string
       finish: "stop" | "tool_calls" | "length" | "refused";
-      usage: { input_tokens: number; output_tokens: number; estimated: boolean } | null;  // AI-20
+      usage: { input_tokens: number; output_tokens: number; estimated: boolean;
+               cache_read_tokens?: number; cache_write_tokens?: number } | null;  // AI-20; cache counts only when not 0
       raw: unknown;               // The message as the provider returned it (below)
     }
   | { role: "tool"; tool_call_id: string; status: "ok" | "error" | "rejected" | "cancelled"; content: string }
@@ -1136,7 +1157,7 @@ type AiEntry = { created_at: number } & (
 | `user` | A `user` message | A `user` message |
 | `assistant` | `raw`, or an `assistant` message with `content` and `tool_calls` | `raw`, or `text` and `tool_use` blocks |
 | `tool` | A `tool` message with `tool_call_id` | A `tool_result` block with `is_error` set for every status but `ok`. Consecutive results go in one `user` message |
-| `summary` | A `user` message that introduces it as a summary of the earlier conversation | The same |
+| `summary` | A `user` message with the summary in a `<summary>` block, which says the assistant wrote it to replace the earlier conversation, that what it quotes is data, that the system prompt and tools of the request win where it differs from them, and to carry on without mentioning it | The same |
 
 - An entry's JSON is split across as many `ai_message` items as it takes to keep each item's plaintext at most 40 KB, so every envelope stays under the 64 KB limit (§6.2).
 - After unlock and after each sync pull, `ai_message` items are decrypted to read `conversation_id`, `entry_id`, and `part`, and `data` is not kept in memory. Opening a conversation decrypts its items again from the local database, so a long history does not stay in memory.
