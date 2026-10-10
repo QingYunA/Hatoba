@@ -397,19 +397,20 @@ export function createMockApi(): HatobaApi {
       });
     },
     ssh_config_preview: async () => [
-      { alias: "github-runner", address: "10.0.4.20", port: 22, username: "runner", identity_file: "~/.ssh/id_ed25519", proxy_jump: null, proxy_command: null, exists: false },
-      { alias: "bastion-tokyo", address: "bastion.tky.example.net", port: 2222, username: "ops", identity_file: null, proxy_jump: null, proxy_command: null, exists: true },
-      { alias: "minecraft", address: "mc.example.org", port: 22, username: "mc", identity_file: null, proxy_jump: "bastion-tokyo", proxy_command: null, exists: false },
-      { alias: "lab-gpu", address: "gpu.lab.internal", port: 22, username: "kc", identity_file: null, proxy_jump: null, proxy_command: "nc -X 5 -x 127.0.0.1:7890 %h %p", exists: false },
+      { alias: "github-runner", address: "10.0.4.20", port: 22, username: "runner", identity_file: "~/.ssh/id_ed25519", identity_file_found: true, proxy_jump: null, proxy_command: null, exists: false },
+      { alias: "bastion-tokyo", address: "bastion.tky.example.net", port: 2222, username: "ops", identity_file: "~/.ssh/id_ed25519", identity_file_found: true, proxy_jump: null, proxy_command: null, exists: true },
+      { alias: "minecraft", address: "mc.example.org", port: 22, username: "mc", identity_file: "~/.ssh/mc_rsa", identity_file_found: false, proxy_jump: "bastion-tokyo", proxy_command: null, exists: false },
+      { alias: "build-arm", address: "10.0.4.31", port: 22, username: "ci", identity_file: "~/.ssh/build_ed25519", identity_file_found: true, proxy_jump: null, proxy_command: null, exists: false },
+      { alias: "lab-gpu", address: "gpu.lab.internal", port: 22, username: "kc", identity_file: null, identity_file_found: false, proxy_jump: null, proxy_command: "nc -X 5 -x 127.0.0.1:7890 %h %p", exists: false },
     ],
-    ssh_config_import: async (aliases) => {
+    ssh_config_import: async (aliases, keyFiles) => {
       await delay(300);
       aliases.forEach((a) =>
         hosts.push({ ...D.HOSTS[0], id: id("h"), name: a, favorite: false, tags: [], group_id: null, last_connected_at: null, os: null, key_id: null, auth_kind: "ask", proxy_mode: "device_default", proxy_id: null }),
       );
       touch();
       const warnings = aliases.includes("lab-gpu") ? ["lab-gpu: ProxyCommand nc -X 5 -x 127.0.0.1:7890 %h %p was not imported; set a proxy or jump host for it"] : [];
-      return { hosts_created: aliases.length, keys_imported: 0, warnings };
+      return { hosts_created: aliases.length, keys_imported: keyFiles.length, warnings };
     },
 
     proxies_list: async () => {

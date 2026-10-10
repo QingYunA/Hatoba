@@ -184,6 +184,9 @@ pub async fn sync_login(
     state: State<'_, AppState>,
     password: String,
 ) -> AppResult<()> {
+    // A disconnect, a lock or another sign-in while this one waits for the server ends the
+    // connection it started from, and this sign-in then saves and installs nothing (§6.3).
+    let generation = state.sync.generation();
     let config = state
         .vault()
         .sync_config()?
@@ -193,9 +196,19 @@ pub async fn sync_login(
         None => sync::backend_for(&config, state.secrets.as_ref())?,
     };
     let session = flows::sign_in(&state.vault, backend.as_ref(), &password, device_info()).await?;
-    save_session(state.secrets.as_ref(), &session)?;
-    backend.set_session(Some(session));
-    state.sync.set_backend(Some(backend));
+    let ended = || AppError::new(ErrorCode::Sync, "sync was disconnected while signing in");
+    {
+        let _rounds = state.sync.lock_rounds().await;
+        if state.sync.generation() != generation {
+            return Err(ended());
+        }
+        save_session(state.secrets.as_ref(), &session)?;
+        backend.set_session(Some(session));
+        // A disconnect that starts now still waits for `_rounds`, and clears this session.
+        if !state.sync.set_backend_if(generation, backend) {
+            return Err(ended());
+        }
+    }
     sync::emit_status(&app);
     sync::trigger(&app, Trigger::Manual);
     Ok(())
@@ -230,15 +243,27 @@ pub fn sync_set_auto(app: AppHandle, state: State<'_, AppState>, enabled: bool) 
 }
 
 /// Stops syncing on this device. Local data and the remote copy are both kept.
+///
+/// The connection ends first, and its running round stops before the saved settings are
+/// cleared, so no round writes sync state after this returns or into a connection set up later
+/// (spec §6.3). Each setting is cleared even if clearing another fails, so a failed credential
+/// store cannot keep the sync configuration that would reconnect at the next unlock; the first
+/// error is returned.
 #[tauri::command]
 #[specta::specta]
-pub fn sync_disconnect(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
-    clear_session(state.secrets.as_ref())?;
-    state.secrets.delete(secret_keys::D1_API_TOKEN)?;
-    state.vault().set_sync_config(None)?;
-    state.sync.set_backend(None);
+pub async fn sync_disconnect(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    let round = state.sync.end_connection().await;
+    let cleared = [
+        clear_session(state.secrets.as_ref()),
+        state.secrets.delete(secret_keys::D1_API_TOKEN),
+        state.vault().set_sync_config(None),
+    ];
+    drop(round);
     sync::emit_status(&app);
-    Ok(())
+    cleared
+        .into_iter()
+        .collect::<hatoba_core::Result<()>>()
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
