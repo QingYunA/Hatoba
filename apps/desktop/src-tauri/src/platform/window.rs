@@ -71,17 +71,25 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// Counts reopens, so a hide still waiting for a fullscreen exit can tell that the window was
+/// brought back in the meantime and leave it shown.
+#[cfg(target_os = "macos")]
+static REOPENS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Hides the main window for the red button. A fullscreen window leaves fullscreen first: hidden in
 /// place, it would leave its black Space behind and come back fullscreen. `is_fullscreen` may turn
-/// false before the exit animation ends, so the hide waits for the animation as well.
+/// false before the exit animation ends, so the hide waits for the animation as well, and is
+/// dropped if the Dock brings the window back before then.
 #[cfg(target_os = "macos")]
 pub fn hide_main(window: tauri::Window) {
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     if !window.is_fullscreen().unwrap_or(false) {
         let _ = window.hide();
         return;
     }
+    let reopens = REOPENS.load(Ordering::SeqCst);
     let _ = window.set_fullscreen(false);
     tauri::async_runtime::spawn(async move {
         for _ in 0..30 {
@@ -91,13 +99,16 @@ pub fn hide_main(window: tauri::Window) {
             }
         }
         tokio::time::sleep(Duration::from_millis(700)).await;
-        let _ = window.hide();
+        if REOPENS.load(Ordering::SeqCst) == reopens {
+            let _ = window.hide();
+        }
     });
 }
 
 /// Brings the main window back after the red button hid it or after it was minimized (Dock click).
 #[cfg(target_os = "macos")]
 pub fn reopen_main(app: &AppHandle) {
+    REOPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
     }
