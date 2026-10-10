@@ -256,12 +256,11 @@ pub fn run() {
                     tauri::async_runtime::block_on(state.mcp.shutdown());
                 }
             }
-            // macOS: a Dock click while the window is hidden or minimized shows it again.
+            // macOS: a Dock click shows the window again. Every click counts, including one while
+            // the window still leaves fullscreen and is visible, so it cancels a pending hide;
+            // showing a visible window changes nothing.
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen {
-                has_visible_windows: false,
-                ..
-            } => platform::window::reopen_main(app),
+            tauri::RunEvent::Reopen { .. } => platform::window::reopen_main(app),
             _ => {}
         });
 }
