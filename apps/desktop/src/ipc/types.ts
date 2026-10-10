@@ -207,7 +207,10 @@ export interface SshConfigCandidate {
   address: string;
   port: number;
   username: string;
+  /** The IdentityFile an import with keys reads: the first that exists, otherwise the first listed. */
   identity_file: string | null;
+  /** `identity_file` exists, so importing keys would read it. */
+  identity_file_found: boolean;
   proxy_jump: string | null;
   /** `ProxyCommand`, which is not imported (SSH-11): the host connects without it. */
   proxy_command: string | null;

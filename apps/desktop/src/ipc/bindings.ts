@@ -70,8 +70,13 @@ export const commands = {
 	/**  HOST-10: TCP connect only (no authentication), 3 s timeout, probed concurrently. */
 	hostsProbe: (ids: string[]) => __TAURI_INVOKE<ProbeResult[]>("hosts_probe", { ids }),
 	sshConfigPreview: () => __TAURI_INVOKE<SshConfigCandidate[]>("ssh_config_preview"),
-	/**  SSH-11: creates hosts (and imports unencrypted identity files as keys) for the chosen aliases. */
-	sshConfigImport: (aliases: string[]) => __TAURI_INVOKE<ImportResult>("ssh_config_import", { aliases }),
+	/**
+	 *  SSH-11: creates hosts for the chosen aliases. It imports as keys only the unencrypted
+	 *  identity files in `key_files`, the ones the preview listed and the user confirmed. A host
+	 *  whose identity file is not among them (the config or the files changed after the preview)
+	 *  asks how to sign in, with a warning. With no `key_files`, no private key file is read.
+	 */
+	sshConfigImport: (aliases: string[], keyFiles: string[]) => __TAURI_INVOKE<ImportResult>("ssh_config_import", { aliases, keyFiles }),
 	proxiesList: () => __TAURI_INVOKE<ProxyView[]>("proxies_list"),
 	proxySave: (input: ProxyInput) => __TAURI_INVOKE<ProxyView>("proxy_save", { input }),
 	proxyDelete: (id: string) => __TAURI_INVOKE<null>("proxy_delete", { id }),
@@ -147,7 +152,15 @@ export const commands = {
 	/**  Hides "Worker update available" until the app bundles a newer Worker version. */
 	syncDismissWorkerUpdate: () => __TAURI_INVOKE<null>("sync_dismiss_worker_update"),
 	syncSetAuto: (enabled: boolean) => __TAURI_INVOKE<void>("sync_set_auto", { enabled }),
-	/**  Stops syncing on this device. Local data and the remote copy are both kept. */
+	/**
+	 *  Stops syncing on this device. Local data and the remote copy are both kept.
+	 * 
+	 *  The connection ends first, and its running round stops before the saved settings are
+	 *  cleared, so no round writes sync state after this returns or into a connection set up later
+	 *  (spec §6.3). Each setting is cleared even if clearing another fails, so a failed credential
+	 *  store cannot keep the sync configuration that would reconnect at the next unlock; the first
+	 *  error is returned.
+	 */
 	syncDisconnect: () => __TAURI_INVOKE<null>("sync_disconnect"),
 	syncDevices: () => __TAURI_INVOKE<DeviceView[]>("sync_devices"),
 	syncRevokeDevice: (deviceId: string) => __TAURI_INVOKE<null>("sync_revoke_device", { deviceId }),
@@ -1218,7 +1231,13 @@ export type SshConfigCandidate = {
 	address: string,
 	port: number,
 	username: string,
+	/**
+	 *  The `IdentityFile` an import with keys reads: the first one that exists, otherwise the
+	 *  first one listed.
+	 */
 	identity_file: string | null,
+	/**  Whether `identity_file` exists, so that importing keys would read it. */
+	identity_file_found: boolean,
 	proxy_jump: string | null,
 	/**  `ProxyCommand`, which is not imported: the host connects without it (SSH-11). */
 	proxy_command: string | null,

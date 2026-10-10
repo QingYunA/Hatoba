@@ -147,7 +147,11 @@ pub struct SshConfigCandidate {
     pub address: String,
     pub port: u16,
     pub username: String,
+    /// The `IdentityFile` an import with keys reads: the first one that exists, otherwise the
+    /// first one listed.
     pub identity_file: Option<String>,
+    /// Whether `identity_file` exists, so that importing keys would read it.
+    pub identity_file_found: bool,
     pub proxy_jump: Option<String>,
     /// `ProxyCommand`, which is not imported: the host connects without it (SSH-11).
     pub proxy_command: Option<String>,

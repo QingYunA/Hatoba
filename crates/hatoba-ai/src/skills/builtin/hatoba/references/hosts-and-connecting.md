@@ -68,6 +68,8 @@ Typing `user@host`, `user@host:port` or an ssh command such as `ssh -p 2222 depl
 
 When the vault has no hosts yet, the empty host list offers **Import SSH Config**. It reads `~/.ssh/config` (on Windows `%USERPROFILE%\.ssh\config`), lists the `Host` entries, and imports the ones you tick. Entries whose name already exists are unticked and marked **Already exists**. A ProxyJump is kept when its first hop names a host that exists in Hatoba (otherwise the import warns). ProxyCommand is not imported: the entry shows **ProxyCommand not imported**, the import warns, and the host connects without it until a proxy or jump host is set. SetEnv becomes the host's environment variables: the first SetEnv line that applies counts, as in OpenSSH, and a variable Hatoba can't use (see Environment variables below) is left out with a warning. SendEnv is not imported. The button is not shown once the vault has hosts, so import before adding hosts, or add hosts by hand. Importing PuTTY sessions is not supported.
 
+Entries show their `IdentityFile` (struck through if missing). Only the checkbox under the list (off by default), which lists the files, imports private keys into the encrypted vault; passphrase-protected ones are skipped. Otherwise hosts use **Ask Each Time**.
+
 | en | zh-CN | ja |
 |---|---|---|
 | Import SSH Config | 从 SSH 配置导入 | SSH 設定からインポート |
