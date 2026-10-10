@@ -846,11 +846,15 @@ impl McpManager {
                 }
                 tracing::info!(server_id = %id, transport = config.kind_str(), "MCP server starting");
                 let http = manager.http();
-                // The login shell's PATH on macOS (already resolved, or waited for here).
-                let path = tauri::async_runtime::spawn_blocking(platform::shell_path::default_path)
-                    .await
-                    .ok()
-                    .flatten();
+                // The login shell's PATH on macOS, resolved when the first stdio server starts.
+                let path = if matches!(config, McpTransportConfig::Stdio { .. }) {
+                    tauri::async_runtime::spawn_blocking(platform::shell_path::default_path)
+                        .await
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
                 let config = with_default_path(config.clone(), path);
                 match McpConnection::connect_with_stderr(&config, &http, START_TIMEOUT, stderr)
                     .await

@@ -73,6 +73,8 @@ windows = { version = "0.62", features = [
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# `killpg` for the login shell that resolves the MCP servers' PATH.
+libc = "0.2"
 # The user's preferred languages (`NSLocale`); a Finder-launched app has no `LANG`.
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSLocale", "NSString"] }
 

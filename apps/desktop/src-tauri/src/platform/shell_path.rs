@@ -2,8 +2,9 @@
 //!
 //! An app started from Finder or the Dock gets only `/usr/bin:/bin:/usr/sbin:/sbin`, so `npx`,
 //! `uvx` or `node` from Homebrew, nvm, mise or Volta are not found. On macOS the login shell's
-//! `PATH` is resolved once, in the background: the shell runs once with a short timeout, and
-//! when it fails the process `PATH` plus the Homebrew directories is used. Other platforms
+//! `PATH` is resolved once, when the first stdio server starts: the shell runs once with a short
+//! timeout, and when it fails the process `PATH` plus the Homebrew directories is used. Users who
+//! never set up a stdio server never run it. Other platforms
 //! start the servers with the inherited `PATH`, as before.
 //!
 //! The value is handed to the servers through their configuration (see
@@ -24,16 +25,6 @@ pub fn default_path() -> Option<&'static OsStr> {
 #[cfg(not(target_os = "macos"))]
 pub fn default_path() -> Option<&'static OsStr> {
     None
-}
-
-/// Starts resolving in the background, so the first MCP server start does not wait for the
-/// shell. A start that comes first waits for the same result.
-pub fn spawn_resolve() {
-    // Calling `default_path` here would run the shell on the setup thread and hold up the window.
-    #[cfg(target_os = "macos")]
-    std::thread::spawn(|| {
-        default_path();
-    });
 }
 
 #[cfg(target_os = "macos")]
@@ -81,10 +72,12 @@ fn parse_marked(output: &str, marker: &str) -> Option<String> {
 
 /// Runs `shell -ilc` (interactive login, so `.zprofile`, `.zshrc` and the like are read) and
 /// returns its `PATH`; `None` when it fails, prints nothing usable, or takes longer than
-/// `timeout` (it is then killed). It runs with no stdin and its stderr dropped.
+/// `timeout`. It runs with no stdin, its stderr dropped, and in a process group of its own, so
+/// giving up kills whatever its rc files started along with it.
 #[cfg(target_os = "macos")]
 fn run_login_shell(shell: &str, marker: &str, timeout: std::time::Duration) -> Option<String> {
     use std::io::Read;
+    use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
     let mut child = Command::new(shell)
@@ -95,6 +88,7 @@ fn run_login_shell(shell: &str, marker: &str, timeout: std::time::Duration) -> O
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .process_group(0)
         .spawn()
         .ok()?;
     let mut stdout = child.stdout.take()?;
@@ -116,13 +110,30 @@ fn run_login_shell(shell: &str, marker: &str, timeout: std::time::Duration) -> O
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
             _ => {
-                let _ = child.kill();
+                kill_group(child.id());
                 let _ = child.wait();
                 return None;
             }
         }
     }
-    parse_marked(&String::from_utf8_lossy(&output?), marker)
+    let Some(output) = output else {
+        // The shell has exited, but something it started still holds the pipe.
+        kill_group(child.id());
+        return None;
+    };
+    parse_marked(&String::from_utf8_lossy(&output), marker)
+}
+
+/// Kills the process group that `run_login_shell` started the shell in (its id is the shell's).
+#[cfg(target_os = "macos")]
+fn kill_group(shell_pid: u32) {
+    let Ok(pgid) = libc::pid_t::try_from(shell_pid) else {
+        return;
+    };
+    // SAFETY: killpg only sends a signal; an empty or vanished group gives ESRCH, which is ignored.
+    unsafe {
+        libc::killpg(pgid, libc::SIGKILL);
+    }
 }
 
 /// The process `PATH` with the Homebrew directories (Apple Silicon, then Intel) added at the end
@@ -232,6 +243,36 @@ mod tests {
             std::fs::remove_file(&shell).unwrap();
             assert_eq!(path, None);
             assert!(started.elapsed() < Duration::from_secs(10));
+        }
+
+        #[test]
+        fn what_the_shell_started_is_killed_with_it() {
+            let pid_file =
+                std::env::temp_dir().join(format!("hatoba-test-child-pid-{}", std::process::id()));
+            let shell = fake_shell(
+                "child",
+                &format!("sleep 30 & echo $! > '{}'; wait", pid_file.display()),
+            );
+            let path = run_login_shell(&shell, "__m__", Duration::from_millis(300));
+            std::fs::remove_file(&shell).unwrap();
+            assert_eq!(path, None);
+            let pid = std::fs::read_to_string(&pid_file).unwrap();
+            std::fs::remove_file(&pid_file).unwrap();
+            let alive = || {
+                std::process::Command::new("/bin/kill")
+                    .args(["-0", pid.trim()])
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .is_ok_and(|s| s.success())
+            };
+            let started = Instant::now();
+            while alive() && started.elapsed() < Duration::from_secs(2) {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(
+                !alive(),
+                "the shell's background sleep outlived the timeout"
+            );
         }
 
         #[test]

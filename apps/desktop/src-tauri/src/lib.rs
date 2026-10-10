@@ -219,8 +219,6 @@ pub fn run() {
                 .mcp
                 .set_events(std::sync::Arc::new(mcp_cmd::AppMcpEvents(handle.clone())));
 
-            // macOS: find the login shell's PATH for MCP servers while the user unlocks.
-            platform::shell_path::spawn_resolve();
             lock::spawn_watchers(handle.clone());
             sync::spawn_scheduler(handle.clone());
             platform::window::show_main(&handle);
