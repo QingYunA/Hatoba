@@ -29,11 +29,11 @@ pub fn default_path() -> Option<&'static OsStr> {
 /// Starts resolving in the background, so the first MCP server start does not wait for the
 /// shell. A start that comes first waits for the same result.
 pub fn spawn_resolve() {
-    if default_path().is_some() {
-        std::thread::spawn(|| {
-            default_path();
-        });
-    }
+    // Calling `default_path` here would run the shell on the setup thread and hold up the window.
+    #[cfg(target_os = "macos")]
+    std::thread::spawn(|| {
+        default_path();
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -43,20 +43,19 @@ fn resolve() -> std::ffi::OsString {
     const TIMEOUT: Duration = Duration::from_secs(3);
     let shell = login_shell(std::env::var("SHELL").ok());
     let marker = format!("__hatoba_{}__", uuid::Uuid::now_v7().simple());
+    // Only the source and the entry count are logged: the value becomes part of each server's
+    // environment, which logs never contain (SEC-04).
     match run_login_shell(&shell, &marker, TIMEOUT) {
         Some(path) => {
             tracing::info!(
                 entries = path.split(':').count(),
                 "MCP default PATH from the login shell"
             );
-            tracing::debug!(%path, "MCP default PATH");
             path.into()
         }
         None => {
-            let path = fallback_path(std::env::var_os("PATH").as_deref());
             tracing::warn!("login shell PATH unavailable, MCP default PATH is the fallback");
-            tracing::debug!(path = %path.to_string_lossy(), "MCP default PATH");
-            path
+            fallback_path(std::env::var_os("PATH").as_deref())
         }
     }
 }
@@ -107,11 +106,22 @@ fn run_login_shell(shell: &str, marker: &str, timeout: std::time::Duration) -> O
         let _ = stdout.read_to_end(&mut bytes);
         let _ = tx.send(bytes);
     });
+    let deadline = std::time::Instant::now() + timeout;
     let output = rx.recv_timeout(timeout).ok();
-    if output.is_none() {
-        let _ = child.kill();
+    // The timeout covers the shell's exit too: an rc file can close stdout and keep running.
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
     }
-    let _ = child.wait();
     parse_marked(&String::from_utf8_lossy(&output?), marker)
 }
 
@@ -207,6 +217,16 @@ mod tests {
         #[test]
         fn a_shell_that_hangs_is_killed_after_the_timeout() {
             let shell = fake_shell("hang", "exec sleep 30");
+            let started = Instant::now();
+            let path = run_login_shell(&shell, "__m__", Duration::from_millis(300));
+            std::fs::remove_file(&shell).unwrap();
+            assert_eq!(path, None);
+            assert!(started.elapsed() < Duration::from_secs(10));
+        }
+
+        #[test]
+        fn a_shell_that_closes_stdout_and_hangs_is_killed_after_the_timeout() {
+            let shell = fake_shell("closed", "exec >/dev/null; sleep 30");
             let started = Instant::now();
             let path = run_login_shell(&shell, "__m__", Duration::from_millis(300));
             std::fs::remove_file(&shell).unwrap();
