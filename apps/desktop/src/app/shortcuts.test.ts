@@ -43,6 +43,13 @@ describe("matchShortcut (WIN-04)", () => {
     expect(isAppShortcut(key({ key: "t", metaKey: true }), "macos")).toBe(true);
   });
 
+  it("searches hosts with ⌘⇧K everywhere on macOS, like Ctrl+Shift+K (§9.1)", () => {
+    const cmdShiftK = key({ key: "K", code: "KeyK", metaKey: true, shiftKey: true });
+    expect(matchShortcut(cmdShiftK, "macos", true)).toBe("search");
+    expect(matchShortcut(cmdShiftK, "macos", false)).toBe("search");
+    expect(isAppShortcut(cmdShiftK, "macos")).toBe(true);
+  });
+
   it("toggles the AI panel with Ctrl+Shift+A / ⌘⇧A (§9.1)", () => {
     expect(matchShortcut(key({ key: "A", code: "KeyA", metaKey: true, shiftKey: true }), "macos", true)).toBe("aiPanel");
     expect(matchShortcut(key({ key: "a", code: "KeyA", metaKey: true }), "macos", true)).toBeNull();

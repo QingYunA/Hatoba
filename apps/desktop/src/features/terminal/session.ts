@@ -582,8 +582,9 @@ export class LiveSession {
         if (down) this.requestFind();
         return false;
       }
-      if (key === "k") {
-        // matchShortcut leaves ⌘K to the terminal while it has focus; elsewhere it searches hosts.
+      if (key === "k" && !e.shiftKey) {
+        // matchShortcut leaves ⌘K to the terminal while it has focus; elsewhere, and with Shift, it
+        // searches hosts.
         if (down) this.term.clear();
         return false;
       }
