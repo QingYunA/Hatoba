@@ -58,6 +58,14 @@ export type SshErrorKind =
   | "channel"
   | "sftp"
   | "cancelled"
+  /** SSH-13: the proxy could not be reached. */
+  | "proxy_unreachable"
+  /** SSH-13: the proxy wants a username and password, or did not accept them. */
+  | "proxy_auth"
+  /** SSH-13: the proxy did not open the connection to the server. */
+  | "proxy"
+  /** SSH-13: the host or this device's default names a proxy that was deleted. */
+  | "proxy_missing"
   | "other";
 
 export type KeyParseErrorKind =
@@ -110,6 +118,9 @@ export interface VaultStatus {
 
 export type AuthKind = "password" | "key" | "agent" | "ask";
 
+/** Which proxy a host's connection goes through (SSH-13). With a jump host, the jump host's choice applies. */
+export type ProxyMode = "device_default" | "direct" | "proxy";
+
 export interface HostView {
   id: string;
   name: string;
@@ -124,6 +135,9 @@ export interface HostView {
   tags: string[];
   favorite: boolean;
   jump_host_id: string | null;
+  /** SSH-13: the device default, no proxy, or the saved proxy in `proxy_id`. */
+  proxy_mode: ProxyMode;
+  proxy_id: string | null;
   note: string;
   /** What the AI assistant is told about the host, in its system prompt (AI-37). */
   ai_notes: string;
@@ -134,6 +148,8 @@ export interface HostView {
   os: string | null;
   /** The host's terminals show the server's resource usage; device-local, never synced, off until turned on (TERM-12). */
   show_stats: boolean;
+  /** Environment variables the terminal asks the server to set (SSH-14). */
+  env: HostEnvVar[];
 }
 
 export interface HostInput {
@@ -151,9 +167,20 @@ export interface HostInput {
   tags: string[];
   favorite: boolean;
   jump_host_id: string | null;
+  proxy_mode: ProxyMode;
+  /** Required when `proxy_mode` is `proxy`, ignored otherwise. */
+  proxy_id: string | null;
   note: string;
   /** At most 2,000 characters (AI-37). */
   ai_notes: string;
+  /** Checked as in `features/hosts/envVars.ts` (SSH-14). */
+  env: HostEnvVar[];
+}
+
+/** One of a host's environment variables (SSH-14). */
+export interface HostEnvVar {
+  name: string;
+  value: string;
 }
 
 export interface GroupView {
@@ -180,8 +207,13 @@ export interface SshConfigCandidate {
   address: string;
   port: number;
   username: string;
+  /** The IdentityFile an import with keys reads: the first that exists, otherwise the first listed. */
   identity_file: string | null;
+  /** `identity_file` exists, so importing keys would read it. */
+  identity_file_found: boolean;
   proxy_jump: string | null;
+  /** `ProxyCommand`, which is not imported (SSH-11): the host connects without it. */
+  proxy_command: string | null;
   /** A host with the same name already exists. */
   exists: boolean;
 }
@@ -196,6 +228,37 @@ export interface ProbeResult {
   id: string;
   online: boolean;
   latency_ms: number | null;
+}
+
+// ───────────────────────── Proxies (SSH-13) ─────────────────────────
+
+export type ProxyKind = "socks5" | "http";
+
+export interface ProxyView {
+  id: string;
+  name: string;
+  kind: ProxyKind;
+  address: string;
+  port: number;
+  /** Empty when the proxy needs no sign-in. */
+  username: string;
+  /** A password is saved (as HOST-08: it can be replaced but never read back). */
+  has_password: boolean;
+  /** Hosts that name this proxy (not those that use it as the device default). */
+  host_ids: string[];
+  updated_at: number;
+}
+
+export interface ProxyInput {
+  /** `null` creates a new proxy. */
+  id: string | null;
+  name: string;
+  kind: ProxyKind;
+  address: string;
+  port: number;
+  username: string;
+  /** `null` keeps the saved password, an empty string removes it. */
+  password: string | null;
 }
 
 // ───────────────────────── Keys ─────────────────────────
@@ -577,6 +640,7 @@ export type ItemType =
   | "known_host"
   | "forward"
   | "snippet"
+  | "proxy"
   | "settings"
   | "ai_provider"
   | "search_provider"
@@ -643,6 +707,8 @@ export interface LocalPrefs {
   ai_panel_open: boolean;
   /** The AI panel's width in CSS pixels. */
   ai_panel_width: number;
+  /** SSH-13: the proxy that hosts set to the device default connect through, on this device. */
+  default_proxy_id: string | null;
 }
 
 /** Device-local state of the sidebar's GitHub star prompt (spec §9). */

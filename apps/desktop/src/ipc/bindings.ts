@@ -70,8 +70,16 @@ export const commands = {
 	/**  HOST-10: TCP connect only (no authentication), 3 s timeout, probed concurrently. */
 	hostsProbe: (ids: string[]) => __TAURI_INVOKE<ProbeResult[]>("hosts_probe", { ids }),
 	sshConfigPreview: () => __TAURI_INVOKE<SshConfigCandidate[]>("ssh_config_preview"),
-	/**  SSH-11: creates hosts (and imports unencrypted identity files as keys) for the chosen aliases. */
-	sshConfigImport: (aliases: string[]) => __TAURI_INVOKE<ImportResult>("ssh_config_import", { aliases }),
+	/**
+	 *  SSH-11: creates hosts for the chosen aliases. It imports as keys only the unencrypted
+	 *  identity files in `key_files`, the ones the preview listed and the user confirmed. A host
+	 *  whose identity file is not among them (the config or the files changed after the preview)
+	 *  asks how to sign in, with a warning. With no `key_files`, no private key file is read.
+	 */
+	sshConfigImport: (aliases: string[], keyFiles: string[]) => __TAURI_INVOKE<ImportResult>("ssh_config_import", { aliases, keyFiles }),
+	proxiesList: () => __TAURI_INVOKE<ProxyView[]>("proxies_list"),
+	proxySave: (input: ProxyInput) => __TAURI_INVOKE<ProxyView>("proxy_save", { input }),
+	proxyDelete: (id: string) => __TAURI_INVOKE<null>("proxy_delete", { id }),
 	keysList: () => __TAURI_INVOKE<KeyView[]>("keys_list"),
 	/**  KEY-01 / WIN-09: OpenSSH, PEM and PuTTY .ppk, from a file or pasted text, with clear errors. */
 	keyImport: (input: KeyImportInput) => __TAURI_INVOKE<KeyView>("key_import", { input }),
@@ -144,7 +152,15 @@ export const commands = {
 	/**  Hides "Worker update available" until the app bundles a newer Worker version. */
 	syncDismissWorkerUpdate: () => __TAURI_INVOKE<null>("sync_dismiss_worker_update"),
 	syncSetAuto: (enabled: boolean) => __TAURI_INVOKE<void>("sync_set_auto", { enabled }),
-	/**  Stops syncing on this device. Local data and the remote copy are both kept. */
+	/**
+	 *  Stops syncing on this device. Local data and the remote copy are both kept.
+	 * 
+	 *  The connection ends first, and its running round stops before the saved settings are
+	 *  cleared, so no round writes sync state after this returns or into a connection set up later
+	 *  (spec §6.3). Each setting is cleared even if clearing another fails, so a failed credential
+	 *  store cannot keep the sync configuration that would reconnect at the next unlock; the first
+	 *  error is returned.
+	 */
 	syncDisconnect: () => __TAURI_INVOKE<null>("sync_disconnect"),
 	syncDevices: () => __TAURI_INVOKE<DeviceView[]>("sync_devices"),
 	syncRevokeDevice: (deviceId: string) => __TAURI_INVOKE<null>("sync_revoke_device", { deviceId }),
@@ -780,6 +796,12 @@ export type GroupView = {
 	sort: number,
 };
 
+/**  One of a host's environment variables (SSH-14). */
+export type HostEnvVar = {
+	name: string,
+	value: string,
+};
+
 export type HostInput = {
 	id: string | null,
 	name: string,
@@ -794,9 +816,14 @@ export type HostInput = {
 	tags: string[],
 	favorite: boolean,
 	jump_host_id: string | null,
+	proxy_mode: ProxyMode,
+	/**  Required when `proxy_mode` is `proxy`, ignored otherwise. */
+	proxy_id: string | null,
 	note: string,
 	/**  At most 2,000 characters (AI-37). */
 	ai_notes: string,
+	/**  Names are trimmed; see `hatoba_core::model::check_host_env` for the rules (SSH-14). */
+	env: HostEnvVar[],
 };
 
 export type HostKeyPrompt = {
@@ -826,6 +853,10 @@ export type HostView = {
 	tags: string[],
 	favorite: boolean,
 	jump_host_id: string | null,
+	/**  SSH-13. With a jump host, the jump host's choice applies instead. */
+	proxy_mode: ProxyMode,
+	/**  The saved proxy, when `proxy_mode` is `proxy`. */
+	proxy_id: string | null,
 	note: string,
 	/**  What the AI assistant is told about the host (AI-37). */
 	ai_notes: string,
@@ -841,6 +872,8 @@ export type HostView = {
 	 *  Device-local, like `last_connected_at`, and off until turned on.
 	 */
 	show_stats: boolean,
+	/**  Environment variables the terminal asks the server to set (SSH-14). */
+	env: HostEnvVar[],
 };
 
 export type ImportResult = {
@@ -849,7 +882,7 @@ export type ImportResult = {
 	warnings: string[],
 };
 
-export type ItemType = "host" | "group" | "key" | "known_host" | "forward" | "snippet" | "ai_provider" | "search_provider" | "ai_conversation" | "ai_message" | "skill" | "skill_file" | "mcp_server" | "settings";
+export type ItemType = "host" | "group" | "key" | "known_host" | "forward" | "snippet" | "proxy" | "ai_provider" | "search_provider" | "ai_conversation" | "ai_message" | "skill" | "skill_file" | "mcp_server" | "settings";
 
 export type KeyAlgorithm = "ed25519" | "ecdsa" | "rsa";
 
@@ -906,6 +939,8 @@ export type LocalPrefs = {
 	ai_panel_open: boolean,
 	/**  The AI panel's width in CSS pixels. */
 	ai_panel_width: number,
+	/**  SSH-13: the proxy that hosts set to the device default connect through, on this device. */
+	default_proxy_id: string | null,
 };
 
 export type LockReason = "manual" | "idle" | "sleep";
@@ -1011,6 +1046,42 @@ export type ProbeResult = {
 	id: string,
 	online: boolean,
 	latency_ms: number | null,
+};
+
+export type ProxyInput = {
+	id: string | null,
+	name: string,
+	kind: ProxyKind,
+	address: string,
+	port: number,
+	username: string,
+	/**  `None` keeps the saved password, an empty string removes it (as HOST-08). */
+	password: string | null,
+};
+
+export type ProxyKind = "socks5" | "http";
+
+/**  Which proxy a host's connection goes through (SSH-13). */
+export type ProxyMode = 
+/**  This device's default proxy, if it has one. */
+"device_default" | 
+/**  No proxy. */
+"direct" | 
+/**  The saved proxy in `proxy_id`. */
+"proxy";
+
+export type ProxyView = {
+	id: string,
+	name: string,
+	kind: ProxyKind,
+	address: string,
+	port: number,
+	/**  Empty when the proxy needs no sign-in. */
+	username: string,
+	has_password: boolean,
+	/**  Hosts that name this proxy (not those that use it as the device default). */
+	host_ids: string[],
+	updated_at: number,
 };
 
 /**
@@ -1160,12 +1231,28 @@ export type SshConfigCandidate = {
 	address: string,
 	port: number,
 	username: string,
+	/**
+	 *  The `IdentityFile` an import with keys reads: the first one that exists, otherwise the
+	 *  first one listed.
+	 */
 	identity_file: string | null,
+	/**  Whether `identity_file` exists, so that importing keys would read it. */
+	identity_file_found: boolean,
 	proxy_jump: string | null,
+	/**  `ProxyCommand`, which is not imported: the host connects without it (SSH-11). */
+	proxy_command: string | null,
 	exists: boolean,
 };
 
-export type SshErrorKind = "dns" | "refused" | "timeout" | "unreachable" | "auth_failed" | "host_key_rejected" | "key_parse" | "disconnected" | "protocol" | "io" | "channel" | "sftp" | "cancelled" | "other";
+export type SshErrorKind = "dns" | "refused" | "timeout" | "unreachable" | "auth_failed" | "host_key_rejected" | "key_parse" | "disconnected" | "protocol" | "io" | "channel" | "sftp" | "cancelled" | 
+/**  SSH-13: the proxy could not be reached. */
+"proxy_unreachable" | 
+/**  SSH-13: the proxy wants a username and password, or did not accept them. */
+"proxy_auth" | 
+/**  SSH-13: the proxy did not open the connection to the server. */
+"proxy" | 
+/**  SSH-13: the host or the device default names a proxy that was deleted. */
+"proxy_missing" | "other";
 
 /**  Device-local state of the sidebar's GitHub star prompt (spec §9; never synced). */
 export type StarPrompt = {

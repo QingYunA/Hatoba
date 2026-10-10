@@ -42,6 +42,18 @@ pub enum AuthKind {
     Ask,
 }
 
+/// Which proxy a host's connection goes through (SSH-13).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyMode {
+    /// This device's default proxy, if it has one.
+    DeviceDefault,
+    /// No proxy.
+    Direct,
+    /// The saved proxy in `proxy_id`.
+    Proxy,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct HostView {
     pub id: String,
@@ -56,6 +68,10 @@ pub struct HostView {
     pub tags: Vec<String>,
     pub favorite: bool,
     pub jump_host_id: Option<String>,
+    /// SSH-13. With a jump host, the jump host's choice applies instead.
+    pub proxy_mode: ProxyMode,
+    /// The saved proxy, when `proxy_mode` is `proxy`.
+    pub proxy_id: Option<String>,
     pub note: String,
     /// What the AI assistant is told about the host (AI-37).
     pub ai_notes: String,
@@ -67,6 +83,8 @@ pub struct HostView {
     /// The host's terminals show the server's resource usage on this device (TERM-12).
     /// Device-local, like `last_connected_at`, and off until turned on.
     pub show_stats: bool,
+    /// Environment variables the terminal asks the server to set (SSH-14).
+    pub env: Vec<HostEnvVar>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -84,9 +102,21 @@ pub struct HostInput {
     pub tags: Vec<String>,
     pub favorite: bool,
     pub jump_host_id: Option<String>,
+    pub proxy_mode: ProxyMode,
+    /// Required when `proxy_mode` is `proxy`, ignored otherwise.
+    pub proxy_id: Option<String>,
     pub note: String,
     /// At most 2,000 characters (AI-37).
     pub ai_notes: String,
+    /// Names are trimmed; see `hatoba_core::model::check_host_env` for the rules (SSH-14).
+    pub env: Vec<HostEnvVar>,
+}
+
+/// One of a host's environment variables (SSH-14).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct HostEnvVar {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -117,8 +147,14 @@ pub struct SshConfigCandidate {
     pub address: String,
     pub port: u16,
     pub username: String,
+    /// The `IdentityFile` an import with keys reads: the first one that exists, otherwise the
+    /// first one listed.
     pub identity_file: Option<String>,
+    /// Whether `identity_file` exists, so that importing keys would read it.
+    pub identity_file_found: bool,
     pub proxy_jump: Option<String>,
+    /// `ProxyCommand`, which is not imported: the host connects without it (SSH-11).
+    pub proxy_command: Option<String>,
     pub exists: bool,
 }
 
@@ -134,6 +170,42 @@ pub struct ProbeResult {
     pub id: String,
     pub online: bool,
     pub latency_ms: Option<u32>,
+}
+
+// ───────────────────────── Proxies (SSH-13) ─────────────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyKind {
+    Socks5,
+    Http,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ProxyView {
+    pub id: String,
+    pub name: String,
+    pub kind: ProxyKind,
+    pub address: String,
+    pub port: u16,
+    /// Empty when the proxy needs no sign-in.
+    pub username: String,
+    pub has_password: bool,
+    /// Hosts that name this proxy (not those that use it as the device default).
+    pub host_ids: Vec<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Type)]
+pub struct ProxyInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub kind: ProxyKind,
+    pub address: String,
+    pub port: u16,
+    pub username: String,
+    /// `None` keeps the saved password, an empty string removes it (as HOST-08).
+    pub password: Option<String>,
 }
 
 // ───────────────────────── Keys ─────────────────────────
@@ -493,6 +565,7 @@ pub enum ItemType {
     KnownHost,
     Forward,
     Snippet,
+    Proxy,
     AiProvider,
     SearchProvider,
     AiConversation,
@@ -762,6 +835,8 @@ pub struct LocalPrefs {
     pub ai_panel_open: bool,
     /// The AI panel's width in CSS pixels.
     pub ai_panel_width: u32,
+    /// SSH-13: the proxy that hosts set to the device default connect through, on this device.
+    pub default_proxy_id: Option<String>,
 }
 
 impl Default for LocalPrefs {
@@ -777,6 +852,7 @@ impl Default for LocalPrefs {
             ai_tool_call_limit: 25,
             ai_panel_open: false,
             ai_panel_width: 380,
+            default_proxy_id: None,
         }
     }
 }

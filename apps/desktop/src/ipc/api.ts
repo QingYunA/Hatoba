@@ -44,6 +44,8 @@ import type {
   McpServerView,
   McpToolInfo,
   ProbeResult,
+  ProxyInput,
+  ProxyView,
   QuickTarget,
   SearchProviderInput,
   SearchProviderView,
@@ -125,7 +127,14 @@ export interface HatobaApi {
   tags_list(): Promise<TagCount[]>;
   hosts_probe(ids: string[]): Promise<ProbeResult[]>;
   ssh_config_preview(): Promise<SshConfigCandidate[]>;
-  ssh_config_import(aliases: string[]): Promise<ImportResult>;
+  /** Also imports the unencrypted identity files in `keyFiles`, the ones the preview listed and the user confirmed; no other key file is read. */
+  ssh_config_import(aliases: string[], keyFiles: string[]): Promise<ImportResult>;
+
+  // proxies (SSH-13)
+  proxies_list(): Promise<ProxyView[]>;
+  proxy_save(input: ProxyInput): Promise<ProxyView>;
+  /** Hosts that named the proxy go back to the device default; this device stops using it as its default. */
+  proxy_delete(id: string): Promise<void>;
 
   // keys
   keys_list(): Promise<KeyView[]>;
