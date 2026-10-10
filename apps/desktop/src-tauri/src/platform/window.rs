@@ -99,7 +99,8 @@ pub fn hide_main(window: tauri::Window) {
             }
         }
         tokio::time::sleep(Duration::from_millis(700)).await;
-        if REOPENS.load(Ordering::SeqCst) == reopens {
+        // A window that never left fullscreen stays shown rather than leave its Space behind.
+        if REOPENS.load(Ordering::SeqCst) == reopens && !window.is_fullscreen().unwrap_or(true) {
             let _ = window.hide();
         }
     });
